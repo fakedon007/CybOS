@@ -1,4 +1,4 @@
-# CybX OS Android App — Phase 4
+# CybX OS Android App — v4
 
 Version 0.2.0 · Android 8+ · ARM64 target
 
