@@ -8,6 +8,7 @@ on:
       - "app-source.zip"
       - "app-source-v0.3.2.zip"
       - "app-source-v0.3.3.zip"
+      - "app-source-v0.3.4.zip"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle.properties"
@@ -24,14 +25,16 @@ jobs:
 
       - name: Restore Android app module from uploaded archive
         run: |
-          if [ -f app-source-v0.3.3.zip ]; then
+          if [ -f app-source-v0.3.4.zip ]; then
+            SOURCE_ARCHIVE="app-source-v0.3.4.zip"
+          elif [ -f app-source-v0.3.3.zip ]; then
             SOURCE_ARCHIVE="app-source-v0.3.3.zip"
           elif [ -f app-source-v0.3.2.zip ]; then
             SOURCE_ARCHIVE="app-source-v0.3.2.zip"
           elif [ -f app-source.zip ]; then
             SOURCE_ARCHIVE="app-source.zip"
           else
-            echo "::error::Missing app-source-v0.3.3.zip, app-source-v0.3.2.zip, or app-source.zip in repository root"
+            echo "::error::Missing app-source-v0.3.4.zip, app-source-v0.3.3.zip, app-source-v0.3.2.zip, or app-source.zip in repository root"
             exit 1
           fi
           echo "Restoring Android module from $SOURCE_ARCHIVE"
@@ -39,8 +42,11 @@ jobs:
           test -f app/build.gradle.kts
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/java/com/cybx/os/MainActivity.kt
-          if [ "$SOURCE_ARCHIVE" = "app-source-v0.3.3.zip" ]; then
+          if [ "$SOURCE_ARCHIVE" = "app-source-v0.3.3.zip" ] || [ "$SOURCE_ARCHIVE" = "app-source-v0.3.4.zip" ]; then
             test -f app/src/main/jniLibs/arm64-v8a/libproot.so
+          fi
+          if [ "$SOURCE_ARCHIVE" = "app-source-v0.3.4.zip" ]; then
+            grep -q 'targetSdk = 28' app/build.gradle.kts
           fi
 
       - name: Set up JDK 17
