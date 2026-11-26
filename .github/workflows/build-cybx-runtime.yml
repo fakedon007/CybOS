@@ -1,0 +1,118 @@
+name: Build CybX ARM64 Runtime Bundle
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/build-cybx-runtime.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare bundle directory
+        run: mkdir -p runtime-bundle
+
+      - name: Download and verify official Kali NetHunter Minimal ARM64 rootfs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd runtime-bundle
+          ROOTFS="kali-nethunter-rootfs-minimal-arm64.tar.xz"
+          BASE="https://kali.download/nethunter-images/current/rootfs"
+          curl --fail --location --retry 3 --retry-delay 2 "$BASE/SHA256SUMS" -o KALI-SHA256SUMS.txt
+          EXPECTED="$(awk -v f="$ROOTFS" '$2 == f {print $1}' KALI-SHA256SUMS.txt | head -n1)"
+          test "${#EXPECTED}" -eq 64
+          curl --fail --location --retry 3 --retry-delay 2 "$BASE/$ROOTFS" -o "$ROOTFS"
+          printf '%s  %s\n' "$EXPECTED" "$ROOTFS" | sha256sum --check -
+          printf '%s  %s\n' "$EXPECTED" "$ROOTFS" > ROOTFS-SHA256.txt
+          echo "ROOTFS_SHA=$EXPECTED" >> "$GITHUB_ENV"
+
+      - name: Fetch portable Android ARM64 PRoot and pinned upstream source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd runtime-bundle
+          curl --fail --location --retry 3 "https://skirsten.github.io/proot-portable-android-binaries/aarch64/proot" -o proot
+          chmod 700 proot
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          b = Path("proot").read_bytes()
+          if len(b) < 64 or b[:4] != b"\\x7fELF":
+              raise SystemExit("Downloaded PRoot is not an ELF executable")
+          if b[4] != 2 or b[5] != 1 or struct.unpack_from("<H", b, 18)[0] != 183:
+              raise SystemExit("Downloaded PRoot is not ELF64 little-endian AArch64")
+          print(f"PRoot ELF verified: {len(b)} bytes, AArch64")
+          PY
+          PROOT_COMMIT="1f4ec1c9d3fcc5d44c2a252eda6d09b0c24928cd"
+          PROOT_SOURCE_SHA="1119f1d27ca7a655eb627ad227fbd9c7a0343ea988dad3ed620fd6cd98723c20"
+          curl --fail --location --retry 3 "https://github.com/termux/proot/archive/$PROOT_COMMIT.zip" -o proot-source.zip
+          printf '%s  %s\n' "$PROOT_SOURCE_SHA" proot-source.zip | sha256sum --check -
+          sha256sum proot | tee PROOT-SHA256.txt
+          sha256sum proot > SHA256SUMS.txt
+          cat ROOTFS-SHA256.txt >> SHA256SUMS.txt
+
+      - name: Write runtime instructions and source provenance
+        shell: bash
+        run: |
+          cat > runtime-bundle/README_RUNTIME.txt <<'EOF'
+          CybX Mobile — ARM64 rootless runtime bundle
+
+          Files:
+            proot
+              Android ARM64 portable PRoot executable. Import this file in CybX OS.
+            kali-nethunter-rootfs-minimal-arm64.tar.xz
+              Official Kali NetHunter Minimal ARM64 root filesystem archive.
+            SHA256SUMS.txt
+              SHA-256 hashes for the PRoot binary and Kali rootfs archive.
+            KALI-SHA256SUMS.txt
+              The official Kali checksum list downloaded from the same rootfs directory.
+            proot-source.zip
+              Pinned upstream Termux PRoot source snapshot corresponding to the build recipe.
+            README_RUNTIME.txt
+              This guide.
+
+          Install:
+            1. Extract the downloaded GitHub Actions artifact ZIP.
+            2. Open CybX OS > Linux Setup.
+            3. Open SHA256SUMS.txt. Copy the hash on the "proot" line into the PRoot SHA-256 field.
+            4. Choose the "proot" file and import it.
+            5. Copy the hash on the "kali-nethunter-rootfs-minimal-arm64.tar.xz" line into the Rootfs SHA-256 field.
+            6. Choose the .tar.xz archive and import it. Extraction may take several minutes.
+            7. Open Terminal and try: uname -m ; cat /etc/os-release
+
+          Provenance and limitations:
+            - Rootfs is downloaded from Kali's official NetHunter current/rootfs directory and checked against its SHA256SUMS file.
+            - PRoot is the portable Android ARM64 binary published by skirsten/proot-portable-android-binaries. That project documents it as based on Termux PRoot. The source snapshot is pinned and included, but the upstream binary itself is not separately signed by Kali or Termux. Review the included source and upstream repository before use.
+            - A matching checksum proves the downloaded bytes match this bundle's manifest; it does not independently prove who built the PRoot binary.
+            - This is a rootless user-space Linux environment. It uses the Android host kernel. It is not a bootable CybX OS image, does not install a custom kernel, and does not grant Android root.
+            - Kernel-only capabilities such as Wi-Fi monitor mode/injection, HID gadget mode, and privileged device access are not provided by this setup.
+            - Keep at least 2 GB of free internal storage before extracting the minimal rootfs.
+            - Use security tools only on systems and networks you own or are authorized to test.
+          EOF
+          cat > runtime-bundle/PROOT-SOURCE.txt <<'EOF'
+          Portable binary source:
+            https://github.com/skirsten/proot-portable-android-binaries
+            https://skirsten.github.io/proot-portable-android-binaries/aarch64/proot
+
+          Upstream source snapshot:
+            https://github.com/termux/proot/archive/1f4ec1c9d3fcc5d44c2a252eda6d09b0c24928cd.zip
+            SHA-256: 1119f1d27ca7a655eb627ad227fbd9c7a0343ea988dad3ed620fd6cd98723c20
+
+          The portable binary repository states that its build is based on the Termux PRoot package
+          and that PROOT_TMP_DIR must be set on Android. CybX sets this to an app-private folder.
+          Review the upstream repository and its license before redistribution.
+          EOF
+
+      - name: Upload runtime bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: CybX-ARM64-Runtime-Bundle
+          path: runtime-bundle/
+          if-no-files-found: error
+          retention-days: 30
