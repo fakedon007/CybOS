@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "product": "CybX OS",
+  "version": "0.1.0",
+  "architecture": "arm64",
+  "rootfs_url": "SET_HTTPS_RELEASE_URL",
+  "rootfs_sha256": "SET_64_HEX_SHA256",
+  "proot_url": "SET_AUDITED_ARM64_PROOT_RELEASE_URL",
+  "proot_sha256": "SET_64_HEX_SHA256",
+  "signature": "SET_ED25519_SIGNATURE",
+  "warning": "Template only. Do not ship with placeholder values."
+}
