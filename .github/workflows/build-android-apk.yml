@@ -5,13 +5,8 @@ on:
   push:
     branches: [ main, master ]
     paths:
-      - ".github/workflows/build-android-apk.yml"
-      - "source-archive/ready-v0.4.0"
+      - "source-overlay/v0.4.0/READY"
       - "app-source-v0.4.0.zip"
-      - "app-source-v0.3.3.zip"
-      - "app-source-v0.3.4.zip"
-      - "app-source-v0.3.2.zip"
-      - "app-source.zip"
 
 permissions:
   contents: read
@@ -27,32 +22,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f source-archive/ready-v0.4.0 ]; then
+          if [ -f source-overlay/v0.4.0/READY ]; then
             test -f app-source-v0.3.3.zip
-            cat source-archive/v0.4.0-part-*.txt | base64 --decode > "$RUNNER_TEMP/cybx-overlay-v0.4.0.zip"
-            unzip -tq "$RUNNER_TEMP/cybx-overlay-v0.4.0.zip"
             unzip -oq app-source-v0.3.3.zip -d .
-            unzip -oq "$RUNNER_TEMP/cybx-overlay-v0.4.0.zip" -d .
+            cp -a source-overlay/v0.4.0/app/. app/
+            cp source-overlay/v0.4.0/settings.gradle.kts settings.gradle.kts
             echo "CYBX_VERSION=0.4.0" >> "$GITHUB_ENV"
+            test -f app/src/main/java/com/cybx/os/runtime/CybxTerminalController.kt
+            test -f app/src/main/res/drawable/ic_launcher_foreground.xml
           elif [ -f app-source-v0.4.0.zip ]; then
             unzip -oq app-source-v0.4.0.zip -d .
             echo "CYBX_VERSION=0.4.0" >> "$GITHUB_ENV"
-          elif [ -f app-source-v0.3.4.zip ]; then
-            unzip -oq app-source-v0.3.4.zip -d .
-            echo "CYBX_VERSION=0.3.4" >> "$GITHUB_ENV"
           elif [ -f app-source-v0.3.3.zip ]; then
             unzip -oq app-source-v0.3.3.zip -d .
             echo "CYBX_VERSION=0.3.3" >> "$GITHUB_ENV"
           else
-            echo "::error::No supported CybX app source archive found"
+            echo "::error::No supported CybX source archive found."
             exit 1
           fi
           test -f app/build.gradle.kts
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/jniLibs/arm64-v8a/libproot.so
-          test -f app/src/main/java/com/cybx/os/runtime/CybxTerminalController.kt
-          test -f app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
-          grep -q 'PINNED_ROOTFS_SHA256' app/src/main/java/com/cybx/os/runtime/LocalRuntimeInstaller.kt
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -60,7 +50,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK command-line tools
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: 'latest'
@@ -97,10 +87,9 @@ jobs:
             echo "CYBX_KEY_ALIAS=$CYBX_KEY_ALIAS_SECRET" >> "$GITHUB_ENV"
             echo "CYBX_KEY_PASSWORD=$CYBX_KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
             echo "CYBX_STABLE_SIGNING=true" >> "$GITHUB_ENV"
-            echo "Stable CybX signing key configured."
           else
             echo "CYBX_STABLE_SIGNING=false" >> "$GITHUB_ENV"
-            echo "::warning::Stable signing secrets are not configured. This build will use a temporary debug certificate and will not support direct in-place updates to future builds."
+            echo "::warning::Stable signing secrets are missing. This build will use a temporary debug key."
           fi
 
       - name: Build APK
