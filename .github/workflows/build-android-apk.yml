@@ -52,11 +52,11 @@ jobs:
 
           gradle = Path("app/build.gradle.kts")
           s = gradle.read_text()
-          s, n1 = re.subn(r"targetSdk\\s*=\\s*\\d+", "targetSdk = 28", s, count=1)
+          s, n1 = re.subn(r"targetSdk\s*=\s*\d+", "targetSdk = 28", s, count=1)
           if n1 != 1:
               raise SystemExit("Could not safely set targetSdk to 28")
-          s, n2 = re.subn(r"versionCode\\s*=\\s*\\d+", "versionCode = 7", s, count=1)
-          s, n3 = re.subn(r'versionName\\s*=\\s*"[^"]+"', 'versionName = "0.3.4"', s, count=1)
+          s, n2 = re.subn(r"versionCode\s*=\s*\d+", "versionCode = 7", s, count=1)
+          s, n3 = re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "0.3.4"', s, count=1)
           if n2 != 1 or n3 != 1:
               raise SystemExit("Could not safely update CybX version metadata")
           gradle.write_text(s)
