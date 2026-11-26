@@ -30,9 +30,8 @@ jobs:
           curl --fail --location --retry 3 --retry-delay 2 "$BASE/$ROOTFS" -o "$ROOTFS"
           printf '%s  %s\n' "$EXPECTED" "$ROOTFS" | sha256sum --check -
           printf '%s  %s\n' "$EXPECTED" "$ROOTFS" > ROOTFS-SHA256.txt
-          echo "ROOTFS_SHA=$EXPECTED" >> "$GITHUB_ENV"
 
-      - name: Fetch portable Android ARM64 PRoot and pinned upstream source
+      - name: Fetch portable Android ARM64 PRoot and verify upstream source
         shell: bash
         run: |
           set -euo pipefail
@@ -43,16 +42,17 @@ jobs:
           from pathlib import Path
           import struct
           b = Path("proot").read_bytes()
-          if len(b) < 64 or b[:4] != b"\\x7fELF":
+          if len(b) < 64 or b[:4] != b"\x7fELF":
               raise SystemExit("Downloaded PRoot is not an ELF executable")
           if b[4] != 2 or b[5] != 1 or struct.unpack_from("<H", b, 18)[0] != 183:
               raise SystemExit("Downloaded PRoot is not ELF64 little-endian AArch64")
-          import hashlib\n          expected_git_blob = "cdfdd6a3f03d6dfb7e4a83a25e8d50c3e668efc7"\n          actual_git_blob = hashlib.sha1(b"blob " + str(len(b)).encode() + b"\\0" + b).hexdigest()\n          if actual_git_blob != expected_git_blob:\n              raise SystemExit(f"PRoot Git blob integrity mismatch: {actual_git_blob}")\n          print(f"PRoot ELF verified: {len(b)} bytes, AArch64; Git blob verified")
+          print(f"PRoot ELF verified: {len(b)} bytes, AArch64")
           PY
-          PROOT_COMMIT="1f4ec1c9d3fcc5d44c2a252eda6d09b0c24928cd"
-          PROOT_SOURCE_SHA="1119f1d27ca7a655eb627ad227fbd9c7a0343ea988dad3ed620fd6cd98723c20"
-          curl --fail --location --retry 3 "https://github.com/termux/proot/archive/$PROOT_COMMIT.zip" -o proot-source.zip
-          printf '%s  %s\n' "$PROOT_SOURCE_SHA" proot-source.zip | sha256sum --check -
+          ACTUAL_GIT_BLOB="$( (printf 'blob %s\0' "$(stat -c%s proot)"; cat proot) | sha1sum | awk '{print $1}')"
+          EXPECTED_GIT_BLOB="cdfdd6a3f03d6dfb7e4a83a25e8d50c3e668efc7"
+          test "$ACTUAL_GIT_BLOB" = "$EXPECTED_GIT_BLOB"
+          curl --fail --location --retry 3 "https://github.com/termux/proot/archive/1f4ec1c9d3fcc5d44c2a252eda6d09b0c24928cd.zip" -o proot-source.zip
+          printf '%s  %s\n' "1119f1d27ca7a655eb627ad227fbd9c7a0343ea988dad3ed620fd6cd98723c20" proot-source.zip | sha256sum --check -
           sha256sum proot | tee PROOT-SHA256.txt
           sha256sum proot > SHA256SUMS.txt
           cat ROOTFS-SHA256.txt >> SHA256SUMS.txt
@@ -73,40 +73,43 @@ jobs:
             KALI-SHA256SUMS.txt
               The official Kali checksum list downloaded from the same rootfs directory.
             proot-source.zip
-              Pinned upstream Termux PRoot source snapshot corresponding to the build recipe.
-            README_RUNTIME.txt
-              This guide.
+              Pinned upstream Termux PRoot source snapshot.
+            PROOT-SOURCE.txt
+              Upstream source references.
 
           Install:
-            1. Extract the downloaded GitHub Actions artifact ZIP.
+            1. Extract this artifact ZIP.
             2. Open CybX OS > Linux Setup.
-            3. Open SHA256SUMS.txt. Copy the hash on the "proot" line into the PRoot SHA-256 field.
+            3. Copy the hash on the "proot" line of SHA256SUMS.txt into the PRoot SHA-256 field, if your app build has that field.
             4. Choose the "proot" file and import it.
             5. Copy the hash on the "kali-nethunter-rootfs-minimal-arm64.tar.xz" line into the Rootfs SHA-256 field.
-            6. Choose the .tar.xz archive and import it. Extraction may take several minutes.
+            6. Choose the .tar.xz archive and import it.
             7. Open Terminal and try: uname -m ; cat /etc/os-release
 
           Provenance and limitations:
-            - Rootfs is downloaded from Kali's official NetHunter current/rootfs directory and checked against its SHA256SUMS file.
-            - PRoot is the portable Android ARM64 binary published by skirsten/proot-portable-android-binaries. That project documents it as based on Termux PRoot. The source snapshot is pinned and included, but the upstream binary itself is not separately signed by Kali or Termux. Review the included source and upstream repository before use.
-            - A matching checksum proves the downloaded bytes match this bundle's manifest; it does not independently prove who built the PRoot binary.
-            - This is a rootless user-space Linux environment. It uses the Android host kernel. It is not a bootable CybX OS image, does not install a custom kernel, and does not grant Android root.
-            - Kernel-only capabilities such as Wi-Fi monitor mode/injection, HID gadget mode, and privileged device access are not provided by this setup.
-            - Keep at least 2 GB of free internal storage before extracting the minimal rootfs.
+            - Kali rootfs is downloaded from Kali's official NetHunter current/rootfs directory and verified against its contemporaneous official SHA256SUMS file.
+            - PRoot binary is from the public skirsten/proot-portable-android-binaries gh-pages branch. Its GitHub Git-blob SHA-1 is pinned and checked, and ELF64 little-endian AArch64 is verified. This is not a Kali-signed or Termux-signed binary.
+            - A checksum proves bytes match the pinned artifact; it does not independently certify the binary publisher or build environment.
+            - This is a rootless user-space environment using the Android host kernel. It is not a bootable CybX OS image and does not grant Android root.
+            - Kernel-only features such as monitor mode/injection, HID gadget mode, and privileged hardware access are not provided.
+            - Keep at least 2 GB free internal storage before extracting the minimal rootfs.
             - Use security tools only on systems and networks you own or are authorized to test.
           EOF
           cat > runtime-bundle/PROOT-SOURCE.txt <<'EOF'
-          Portable binary source:
+          Portable PRoot repository:
             https://github.com/skirsten/proot-portable-android-binaries
-            https://skirsten.github.io/proot-portable-android-binaries/aarch64/proot
 
-          Upstream source snapshot:
+          The repository README describes this as Android portable builds based on the Termux PRoot package and requires PROOT_TMP_DIR to be set because /tmp is unavailable on Android.
+
+          Pinned published AArch64 binary Git blob:
+            cdfdd6a3f03d6dfb7e4a83a25e8d50c3e668efc7
+            https://raw.githubusercontent.com/skirsten/proot-portable-android-binaries/gh-pages/aarch64/proot
+
+          Pinned Termux PRoot source commit:
             https://github.com/termux/proot/archive/1f4ec1c9d3fcc5d44c2a252eda6d09b0c24928cd.zip
             SHA-256: 1119f1d27ca7a655eb627ad227fbd9c7a0343ea988dad3ed620fd6cd98723c20
 
-          The portable binary repository states that its build is based on the Termux PRoot package
-          and that PROOT_TMP_DIR must be set on Android. CybX sets this to an app-private folder.
-          Review the upstream repository and its license before redistribution.
+          Review the project sources and licensing before redistribution.
           EOF
 
       - name: Upload runtime bundle
