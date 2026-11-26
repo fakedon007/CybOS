@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           cd runtime-bundle
-          curl --fail --location --retry 3 "https://skirsten.github.io/proot-portable-android-binaries/aarch64/proot" -o proot
+          curl --fail --location --retry 3 "https://raw.githubusercontent.com/skirsten/proot-portable-android-binaries/gh-pages/aarch64/proot" -o proot
           chmod 700 proot
           python3 - <<'PY'
           from pathlib import Path
@@ -47,7 +47,7 @@ jobs:
               raise SystemExit("Downloaded PRoot is not an ELF executable")
           if b[4] != 2 or b[5] != 1 or struct.unpack_from("<H", b, 18)[0] != 183:
               raise SystemExit("Downloaded PRoot is not ELF64 little-endian AArch64")
-          print(f"PRoot ELF verified: {len(b)} bytes, AArch64")
+          import hashlib\n          expected_git_blob = "cdfdd6a3f03d6dfb7e4a83a25e8d50c3e668efc7"\n          actual_git_blob = hashlib.sha1(b"blob " + str(len(b)).encode() + b"\\0" + b).hexdigest()\n          if actual_git_blob != expected_git_blob:\n              raise SystemExit(f"PRoot Git blob integrity mismatch: {actual_git_blob}")\n          print(f"PRoot ELF verified: {len(b)} bytes, AArch64; Git blob verified")
           PY
           PROOT_COMMIT="1f4ec1c9d3fcc5d44c2a252eda6d09b0c24928cd"
           PROOT_SOURCE_SHA="1119f1d27ca7a655eb627ad227fbd9c7a0343ea988dad3ed620fd6cd98723c20"
