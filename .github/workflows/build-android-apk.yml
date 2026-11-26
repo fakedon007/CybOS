@@ -1,11 +1,15 @@
-name: Build CybX Android APK v0.3.0
+name: Build CybX Android APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
     paths:
-      - "app-source-v0.3.0.zip"
+      - "app-source.zip"
+      - "app-source-v0.3.2.zip"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
 
 permissions:
   contents: read
@@ -17,11 +21,18 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Restore Android app module from v0.3.0 source archive
+      - name: Restore Android app module from uploaded archive
         run: |
-          set -euo pipefail
-          test -f app-source-v0.3.0.zip || { echo "::error::Upload app-source-v0.3.0.zip to the repository root"; exit 1; }
-          unzip -oq app-source-v0.3.0.zip -d .
+          if [ -f app-source-v0.3.2.zip ]; then
+            SOURCE_ARCHIVE="app-source-v0.3.2.zip"
+          elif [ -f app-source.zip ]; then
+            SOURCE_ARCHIVE="app-source.zip"
+          else
+            echo "::error::Missing app-source-v0.3.2.zip or app-source.zip in repository root"
+            exit 1
+          fi
+          echo "Restoring Android module from $SOURCE_ARCHIVE"
+          unzip -oq "$SOURCE_ARCHIVE" -d .
           test -f app/build.gradle.kts
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/java/com/cybx/os/MainActivity.kt
@@ -54,7 +65,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CybX-OS-v0.3.0-debug-APK
+          name: CybX-OS-debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 30
