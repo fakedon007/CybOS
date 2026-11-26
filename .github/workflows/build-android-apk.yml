@@ -6,7 +6,7 @@ on:
     branches: [ main, master ]
     paths:
       - ".github/workflows/build-android-apk.yml"
-      - "cybx-overlay-v0.4.0.zip"
+      - "source-archive/ready-v0.4.0"
       - "app-source-v0.4.0.zip"
       - "app-source-v0.3.3.zip"
       - "app-source-v0.3.4.zip"
@@ -27,10 +27,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f cybx-overlay-v0.4.0.zip ]; then
+          if [ -f source-archive/ready-v0.4.0 ]; then
             test -f app-source-v0.3.3.zip
+            cat source-archive/v0.4.0-part-*.txt | base64 --decode > "$RUNNER_TEMP/cybx-overlay-v0.4.0.zip"
+            unzip -tq "$RUNNER_TEMP/cybx-overlay-v0.4.0.zip"
             unzip -oq app-source-v0.3.3.zip -d .
-            unzip -oq cybx-overlay-v0.4.0.zip -d .
+            unzip -oq "$RUNNER_TEMP/cybx-overlay-v0.4.0.zip" -d .
             echo "CYBX_VERSION=0.4.0" >> "$GITHUB_ENV"
           elif [ -f app-source-v0.4.0.zip ]; then
             unzip -oq app-source-v0.4.0.zip -d .
