@@ -6,214 +6,51 @@ on:
     branches: [ main, master ]
     paths:
       - ".github/workflows/build-android-apk.yml"
-      - "app-source.zip"
-      - "app-source-v0.3.2.zip"
+      - "cybx-overlay-v0.4.0.zip"
+      - "app-source-v0.4.0.zip"
       - "app-source-v0.3.3.zip"
       - "app-source-v0.3.4.zip"
-      - "build.gradle.kts"
-      - "settings.gradle.kts"
-      - "gradle.properties"
+      - "app-source-v0.3.2.zip"
+      - "app-source.zip"
 
 permissions:
   contents: read
 
 jobs:
-  build-debug-apk:
+  build-android-apk:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Restore Android app module
+      - name: Restore CybX Android project
+        shell: bash
         run: |
-          if [ -f app-source-v0.3.4.zip ]; then
-            SOURCE_ARCHIVE="app-source-v0.3.4.zip"
+          set -euo pipefail
+          if [ -f cybx-overlay-v0.4.0.zip ]; then
+            test -f app-source-v0.3.3.zip
+            unzip -oq app-source-v0.3.3.zip -d .
+            unzip -oq cybx-overlay-v0.4.0.zip -d .
+            echo "CYBX_VERSION=0.4.0" >> "$GITHUB_ENV"
+          elif [ -f app-source-v0.4.0.zip ]; then
+            unzip -oq app-source-v0.4.0.zip -d .
+            echo "CYBX_VERSION=0.4.0" >> "$GITHUB_ENV"
+          elif [ -f app-source-v0.3.4.zip ]; then
+            unzip -oq app-source-v0.3.4.zip -d .
+            echo "CYBX_VERSION=0.3.4" >> "$GITHUB_ENV"
           elif [ -f app-source-v0.3.3.zip ]; then
-            SOURCE_ARCHIVE="app-source-v0.3.3.zip"
-          elif [ -f app-source-v0.3.2.zip ]; then
-            SOURCE_ARCHIVE="app-source-v0.3.2.zip"
-          elif [ -f app-source.zip ]; then
-            SOURCE_ARCHIVE="app-source.zip"
+            unzip -oq app-source-v0.3.3.zip -d .
+            echo "CYBX_VERSION=0.3.3" >> "$GITHUB_ENV"
           else
-            echo "::error::No CybX app source archive found in repository root"
+            echo "::error::No supported CybX app source archive found"
             exit 1
           fi
-          echo "Restoring Android module from $SOURCE_ARCHIVE"
-          unzip -oq "$SOURCE_ARCHIVE" -d .
           test -f app/build.gradle.kts
           test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/java/com/cybx/os/MainActivity.kt
-
-      - name: Apply Android 16 PRoot runtime compatibility patch
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          gradle = Path("app/build.gradle.kts")
-          s = gradle.read_text()
-          s, n1 = re.subn(r"targetSdk\s*=\s*\d+", "targetSdk = 28", s, count=1)
-          if n1 != 1:
-              raise SystemExit("Could not safely set targetSdk to 28")
-          s, n2 = re.subn(r"versionCode\s*=\s*\d+", "versionCode = 8", s, count=1)
-          s, n3 = re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "0.3.5"', s, count=1)
-          if n2 != 1 or n3 != 1:
-              raise SystemExit("Could not safely update CybX version metadata")
-          gradle.write_text(s)
-
-          paths_file = Path("app/src/main/java/com/cybx/os/runtime/CybxPaths.kt")
-          paths_file.write_text("""package com.cybx.os.runtime
-
-          import android.content.Context
-          import java.io.File
-
-          class CybxPaths(context: Context) {
-              val base = File(context.filesDir, "cybx").apply { mkdirs() }
-              // Run the packaged host PRoot from Android's read-only native library directory.
-              val prootExecutable = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
-              val rootfs = File(base, "rootfs")
-              val downloads = File(base, "downloads").apply { mkdirs() }
-              val bin = File(base, "bin").apply { mkdirs() }
-              val logs = File(base, "logs").apply { mkdirs() }
-              val prootTmp = File(base, "proot-tmp").apply { mkdirs() }
-              val rootHome = File(base, "home-root").apply { mkdirs() }
-              val rootfsArchive = File(downloads, "cybx-kali-arm64-rootfs.tar.xz")
-          }
-          """)
-
-          adapter = Path("app/src/main/java/com/cybx/os/runtime/ProotAdapter.kt")
-          adapter.write_text("""package com.cybx.os.runtime
-
-          /** Runs the APK-packaged Android ARM64 PRoot binary from nativeLibraryDir. */
-          class ProotAdapter(private val paths: CybxPaths) {
-              private val executable = paths.prootExecutable
-
-              fun isAvailable(): Boolean = executable.isFile && executable.canExecute() && executable.length() > 0
-
-              fun buildShellCommand(command: String): List<String> {
-                  require(isAvailable()) { "Bundled Android ARM64 PRoot is missing. Reinstall the CybX APK." }
-                  require(paths.rootfs.isDirectory) { "Kali rootfs is not installed." }
-                  return listOf(
-                      executable.absolutePath, "--link2symlink", "-0",
-                      "-r", paths.rootfs.absolutePath,
-                      "-b", "/dev", "-b", "/proc", "-b", "/sys",
-                      "-b", "${paths.rootHome.absolutePath}:/dev/shm",
-                      "-w", "/root",
-                      "/usr/bin/env", "-i",
-                      "HOME=/root", "USER=root", "TERM=xterm-256color",
-                      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-                      "/bin/bash", "-lc", command
-                  )
-              }
-
-              fun buildInteractiveShellCommand(): List<String> {
-                  require(isAvailable()) { "Bundled Android ARM64 PRoot is missing. Reinstall the CybX APK." }
-                  require(paths.rootfs.isDirectory) { "CybX Linux rootfs is not installed." }
-                  return listOf(
-                      executable.absolutePath, "--link2symlink", "-0",
-                      "-r", paths.rootfs.absolutePath,
-                      "-b", "/dev", "-b", "/proc", "-b", "/sys",
-                      "-b", "${paths.rootHome.absolutePath}:/dev/shm",
-                      "-w", "/root",
-                      "/usr/bin/env", "-i",
-                      "HOME=/root", "USER=root", "LOGNAME=root",
-                      "LANG=C.UTF-8", "TERM=xterm-256color",
-                      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-                      "/bin/bash", "--noprofile", "--norc", "-i"
-                  )
-              }
-
-              fun processBuilder(command: List<String>): ProcessBuilder {
-                  if (!paths.prootTmp.exists()) {
-                      check(paths.prootTmp.mkdirs() || paths.prootTmp.isDirectory) {
-                          "Cannot create PRoot temporary directory: ${paths.prootTmp.absolutePath}"
-                      }
-                  }
-                  check(paths.prootTmp.isDirectory && paths.prootTmp.canWrite()) {
-                      "PRoot temporary directory is not writable: ${paths.prootTmp.absolutePath}"
-                  }
-                  if (!paths.rootHome.exists()) {
-                      check(paths.rootHome.mkdirs() || paths.rootHome.isDirectory) {
-                          "Cannot create Linux home directory: ${paths.rootHome.absolutePath}"
-                      }
-                  }
-                  return ProcessBuilder(command).apply {
-                      directory(paths.base)
-                      redirectErrorStream(true)
-                      environment()["PROOT_TMP_DIR"] = paths.prootTmp.absolutePath
-                      environment()["TMPDIR"] = paths.prootTmp.absolutePath
-                      environment()["HOME"] = paths.rootHome.absolutePath
-                  }
-              }
-
-              fun startInteractiveShell(): Process = processBuilder(buildInteractiveShellCommand()).start()
-          }
-          """)
-          print("Patched targetSdk=28, version=0.3.5, PRoot temp paths and process environment")
-          PY
-
-          grep -q 'targetSdk = 28' app/build.gradle.kts
-          grep -q 'PROOT_TMP_DIR' app/src/main/java/com/cybx/os/runtime/ProotAdapter.kt
           test -f app/src/main/jniLibs/arm64-v8a/libproot.so
-
-      - name: Make rootfs SHA-256 input paste-friendly
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          installer = Path("app/src/main/java/com/cybx/os/runtime/LocalRuntimeInstaller.kt")
-          s = installer.read_text()
-          marker = "class LocalRuntimeInstaller(context: Context) {"
-          helper = r"""/** Accept a raw SHA-256 or a standard sha256sum line. */
-          internal fun normalizeRootfsSha256(input: String): String? {
-              val withoutLabel = input.trim().replaceFirst(Regex("(?i)^sha-?256\\\\s*[:=]\\\\s*"), "")
-              val token = withoutLabel.split(Regex("\\\\s+")).firstOrNull().orEmpty().trim().trim('"')
-              return token.takeIf { Regex("(?i)^[0-9a-f]{64}$").matches(it) }?.lowercase()
-          }
-
-          """
-          if "internal fun normalizeRootfsSha256" not in s:
-              if marker not in s:
-                  raise SystemExit("Could not find LocalRuntimeInstaller insertion point")
-              s = s.replace(marker, helper + marker, 1)
-
-          old_check = '            require(expectedSha256.matches(Regex("^[A-Fa-f0-9]{64}$"))) { "Enter a valid 64-character SHA-256" }'
-          new_check = '            val normalizedExpected = normalizeRootfsSha256(expectedSha256)\n            require(normalizedExpected != null) { "Enter a 64-character SHA-256, or paste the full SHA256SUMS line." }'
-          if old_check in s:
-              s = s.replace(old_check, new_check, 1)
-          elif "val normalizedExpected = normalizeRootfsSha256(expectedSha256)" not in s:
-              raise SystemExit("Could not locate existing SHA validation")
-          old_compare = "actual.equals(expectedSha256, ignoreCase = true)"
-          if old_compare in s:
-              s = s.replace(old_compare, "actual.equals(normalizedExpected, ignoreCase = true)", 1)
-          elif "actual.equals(normalizedExpected, ignoreCase = true)" not in s:
-              raise SystemExit("Could not locate SHA comparison")
-          installer.write_text(s)
-
-          activity = Path("app/src/main/java/com/cybx/os/MainActivity.kt")
-          a = activity.read_text()
-          old_enabled = 'enabled = !busy && sha.matches(Regex("^[A-Fa-f0-9]{64}$"))'
-          new_enabled = 'enabled = !busy && com.cybx.os.runtime.normalizeRootfsSha256(sha) != null'
-          if old_enabled in a:
-              a = a.replace(old_enabled, new_enabled, 1)
-          elif new_enabled not in a:
-              raise SystemExit("Could not locate rootfs import button validation")
-          old_label = 'label = { Text("Rootfs SHA-256 (64 hex characters)") }, singleLine = true)'
-          new_label = 'label = { Text("Rootfs SHA-256") }, singleLine = true, supportingText = { Text("Paste the 64-character hash or the full SHA256SUMS line.") })'
-          if old_label in a:
-              a = a.replace(old_label, new_label, 1)
-          elif "full SHA256SUMS line" not in a:
-              raise SystemExit("Could not locate rootfs SHA input field")
-          activity.write_text(a)
-
-          gradle = Path("app/build.gradle.kts").read_text()
-          if 'versionCode = 8' not in gradle or 'versionName = "0.3.5"' not in gradle:
-              raise SystemExit("CybX 0.3.5 version metadata is missing")
-          print("Rootfs SHA input accepts raw hash or sha256sum line, trims whitespace and optional SHA256: label.")
-          PY
-
-          grep -q 'normalizeRootfsSha256' app/src/main/java/com/cybx/os/runtime/LocalRuntimeInstaller.kt
-          grep -q 'com.cybx.os.runtime.normalizeRootfsSha256(sha)' app/src/main/java/com/cybx/os/MainActivity.kt
+          test -f app/src/main/java/com/cybx/os/runtime/CybxTerminalController.kt
+          test -f app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          grep -q 'PINNED_ROOTFS_SHA256' app/src/main/java/com/cybx/os/runtime/LocalRuntimeInstaller.kt
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -237,12 +74,51 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Prepare stable signing key (optional)
+        shell: bash
+        env:
+          CYBX_KEYSTORE_BASE64: ${{ secrets.CYBX_KEYSTORE_BASE64 }}
+          CYBX_KEYSTORE_PASSWORD_SECRET: ${{ secrets.CYBX_KEYSTORE_PASSWORD }}
+          CYBX_KEY_ALIAS_SECRET: ${{ secrets.CYBX_KEY_ALIAS }}
+          CYBX_KEY_PASSWORD_SECRET: ${{ secrets.CYBX_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${CYBX_KEYSTORE_BASE64:-}" ] &&
+             [ -n "${CYBX_KEYSTORE_PASSWORD_SECRET:-}" ] &&
+             [ -n "${CYBX_KEY_ALIAS_SECRET:-}" ] &&
+             [ -n "${CYBX_KEY_PASSWORD_SECRET:-}" ]; then
+            KEYSTORE_PATH="$RUNNER_TEMP/cybx-release.jks"
+            printf '%s' "$CYBX_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+            test -s "$KEYSTORE_PATH"
+            echo "CYBX_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+            echo "CYBX_KEYSTORE_PASSWORD=$CYBX_KEYSTORE_PASSWORD_SECRET" >> "$GITHUB_ENV"
+            echo "CYBX_KEY_ALIAS=$CYBX_KEY_ALIAS_SECRET" >> "$GITHUB_ENV"
+            echo "CYBX_KEY_PASSWORD=$CYBX_KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
+            echo "CYBX_STABLE_SIGNING=true" >> "$GITHUB_ENV"
+            echo "Stable CybX signing key configured."
+          else
+            echo "CYBX_STABLE_SIGNING=false" >> "$GITHUB_ENV"
+            echo "::warning::Stable signing secrets are not configured. This build will use a temporary debug certificate and will not support direct in-place updates to future builds."
+          fi
+
       - name: Build APK
-        run: gradle --no-daemon :app:assembleDebug
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          if [ "$CYBX_STABLE_SIGNING" = "true" ]; then
+            gradle --no-daemon :app:assembleRelease
+            cp app/build/outputs/apk/release/app-release.apk "dist/CybX-OS-v${CYBX_VERSION}.apk"
+          else
+            gradle --no-daemon :app:assembleDebug
+            cp app/build/outputs/apk/debug/app-debug.apk "dist/CybX-OS-v${CYBX_VERSION}.apk"
+          fi
+          sha256sum "dist/CybX-OS-v${CYBX_VERSION}.apk" | tee dist/SHA256SUMS.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "dist/CybX-OS-v${CYBX_VERSION}.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CybX-OS-debug-APK-v0.3.5
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: CybX-OS-v${{ env.CYBX_VERSION }}-APK
+          path: dist/*
           if-no-files-found: error
