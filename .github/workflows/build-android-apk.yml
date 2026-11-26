@@ -5,6 +5,7 @@ on:
   push:
     branches: [ main, master ]
     paths:
+      - ".github/workflows/build-android-apk.yml"
       - "app-source.zip"
       - "app-source-v0.3.2.zip"
       - "app-source-v0.3.3.zip"
@@ -23,7 +24,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Restore Android app module from uploaded archive
+      - name: Restore Android app module
         run: |
           if [ -f app-source-v0.3.4.zip ]; then
             SOURCE_ARCHIVE="app-source-v0.3.4.zip"
@@ -34,7 +35,7 @@ jobs:
           elif [ -f app-source.zip ]; then
             SOURCE_ARCHIVE="app-source.zip"
           else
-            echo "::error::Missing app-source-v0.3.4.zip, app-source-v0.3.3.zip, app-source-v0.3.2.zip, or app-source.zip in repository root"
+            echo "::error::No CybX app source archive found in repository root"
             exit 1
           fi
           echo "Restoring Android module from $SOURCE_ARCHIVE"
@@ -42,12 +43,118 @@ jobs:
           test -f app/build.gradle.kts
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/java/com/cybx/os/MainActivity.kt
-          if [ "$SOURCE_ARCHIVE" = "app-source-v0.3.3.zip" ] || [ "$SOURCE_ARCHIVE" = "app-source-v0.3.4.zip" ]; then
-            test -f app/src/main/jniLibs/arm64-v8a/libproot.so
-          fi
-          if [ "$SOURCE_ARCHIVE" = "app-source-v0.3.4.zip" ]; then
-            grep -q 'targetSdk = 28' app/build.gradle.kts
-          fi
+
+      - name: Apply Android 16 PRoot runtime compatibility patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          gradle = Path("app/build.gradle.kts")
+          s = gradle.read_text()
+          s, n1 = re.subn(r"targetSdk\\s*=\\s*\\d+", "targetSdk = 28", s, count=1)
+          if n1 != 1:
+              raise SystemExit("Could not safely set targetSdk to 28")
+          s, n2 = re.subn(r"versionCode\\s*=\\s*\\d+", "versionCode = 7", s, count=1)
+          s, n3 = re.subn(r'versionName\\s*=\\s*"[^"]+"', 'versionName = "0.3.4"', s, count=1)
+          if n2 != 1 or n3 != 1:
+              raise SystemExit("Could not safely update CybX version metadata")
+          gradle.write_text(s)
+
+          paths_file = Path("app/src/main/java/com/cybx/os/runtime/CybxPaths.kt")
+          paths_file.write_text("""package com.cybx.os.runtime
+
+          import android.content.Context
+          import java.io.File
+
+          class CybxPaths(context: Context) {
+              val base = File(context.filesDir, "cybx").apply { mkdirs() }
+              // Run the packaged host PRoot from Android's read-only native library directory.
+              val prootExecutable = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
+              val rootfs = File(base, "rootfs")
+              val downloads = File(base, "downloads").apply { mkdirs() }
+              val bin = File(base, "bin").apply { mkdirs() }
+              val logs = File(base, "logs").apply { mkdirs() }
+              val prootTmp = File(base, "proot-tmp").apply { mkdirs() }
+              val rootHome = File(base, "home-root").apply { mkdirs() }
+              val rootfsArchive = File(downloads, "cybx-kali-arm64-rootfs.tar.xz")
+          }
+          """)
+
+          adapter = Path("app/src/main/java/com/cybx/os/runtime/ProotAdapter.kt")
+          adapter.write_text("""package com.cybx.os.runtime
+
+          /** Runs the APK-packaged Android ARM64 PRoot binary from nativeLibraryDir. */
+          class ProotAdapter(private val paths: CybxPaths) {
+              private val executable = paths.prootExecutable
+
+              fun isAvailable(): Boolean = executable.isFile && executable.canExecute() && executable.length() > 0
+
+              fun buildShellCommand(command: String): List<String> {
+                  require(isAvailable()) { "Bundled Android ARM64 PRoot is missing. Reinstall the CybX APK." }
+                  require(paths.rootfs.isDirectory) { "Kali rootfs is not installed." }
+                  return listOf(
+                      executable.absolutePath, "--link2symlink", "-0",
+                      "-r", paths.rootfs.absolutePath,
+                      "-b", "/dev", "-b", "/proc", "-b", "/sys",
+                      "-b", "${paths.rootHome.absolutePath}:/dev/shm",
+                      "-w", "/root",
+                      "/usr/bin/env", "-i",
+                      "HOME=/root", "USER=root", "TERM=xterm-256color",
+                      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                      "/bin/bash", "-lc", command
+                  )
+              }
+
+              fun buildInteractiveShellCommand(): List<String> {
+                  require(isAvailable()) { "Bundled Android ARM64 PRoot is missing. Reinstall the CybX APK." }
+                  require(paths.rootfs.isDirectory) { "CybX Linux rootfs is not installed." }
+                  return listOf(
+                      executable.absolutePath, "--link2symlink", "-0",
+                      "-r", paths.rootfs.absolutePath,
+                      "-b", "/dev", "-b", "/proc", "-b", "/sys",
+                      "-b", "${paths.rootHome.absolutePath}:/dev/shm",
+                      "-w", "/root",
+                      "/usr/bin/env", "-i",
+                      "HOME=/root", "USER=root", "LOGNAME=root",
+                      "LANG=C.UTF-8", "TERM=xterm-256color",
+                      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                      "/bin/bash", "--noprofile", "--norc", "-i"
+                  )
+              }
+
+              fun processBuilder(command: List<String>): ProcessBuilder {
+                  if (!paths.prootTmp.exists()) {
+                      check(paths.prootTmp.mkdirs() || paths.prootTmp.isDirectory) {
+                          "Cannot create PRoot temporary directory: ${paths.prootTmp.absolutePath}"
+                      }
+                  }
+                  check(paths.prootTmp.isDirectory && paths.prootTmp.canWrite()) {
+                      "PRoot temporary directory is not writable: ${paths.prootTmp.absolutePath}"
+                  }
+                  if (!paths.rootHome.exists()) {
+                      check(paths.rootHome.mkdirs() || paths.rootHome.isDirectory) {
+                          "Cannot create Linux home directory: ${paths.rootHome.absolutePath}"
+                      }
+                  }
+                  return ProcessBuilder(command).apply {
+                      directory(paths.base)
+                      redirectErrorStream(true)
+                      environment()["PROOT_TMP_DIR"] = paths.prootTmp.absolutePath
+                      environment()["TMPDIR"] = paths.prootTmp.absolutePath
+                      environment()["HOME"] = paths.rootHome.absolutePath
+                  }
+              }
+
+              fun startInteractiveShell(): Process = processBuilder(buildInteractiveShellCommand()).start()
+          }
+          """)
+          print("Patched targetSdk=28, version=0.3.4, PRoot temp paths and process environment")
+          PY
+
+          grep -q 'targetSdk = 28' app/build.gradle.kts
+          grep -q 'PROOT_TMP_DIR' app/src/main/java/com/cybx/os/runtime/ProotAdapter.kt
+          test -f app/src/main/jniLibs/arm64-v8a/libproot.so
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -77,6 +184,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CybX-OS-debug-APK
+          name: CybX-OS-debug-APK-v0.3.4
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
