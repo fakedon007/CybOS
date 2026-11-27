@@ -10,6 +10,15 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -536,30 +545,157 @@ private fun TerminalPage(
     onSend: () -> Unit,
     onRestart: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val focusManager = LocalFocusManager.current
+    var inputFocused by remember { mutableStateOf(false) }
+
+    fun submitCommand() {
+        if (input.isNotBlank()) {
+            onSend()
+            focusManager.clearFocus()
+        }
+    }
+
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (!ready) {
             Text(problem ?: "Kali rootless runtime is not ready. Open Linux Setup first.", color = Amber, fontSize = 12.sp)
         } else {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("KALI ROOTLESS SHELL", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Icon(Icons.Default.Terminal, contentDescription = null, tint = Green, modifier = Modifier.size(18.dp))
+                    Text("KALI ROOTLESS SHELL", color = Green, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp)
+                }
                 TextButton(onClick = onRestart) { Text("Close session") }
             }
-            Card(Modifier.weight(1f).fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF050907))) {
-                LazyColumn(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Card(
+                Modifier.weight(1f).fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF050907)),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                LazyColumn(
+                    Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     items(lines.toList()) { line ->
                         Text(line, color = Color(0xFFD8E8DC), fontFamily = FontFamily.Monospace, fontSize = 11.sp)
                     }
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedTextField(
-                    value = input, onValueChange = onInput, modifier = Modifier.weight(1f),
-                    singleLine = true, label = { Text("Kali command") },
-                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                )
-                IconButton(onClick = onSend, enabled = input.isNotBlank()) { Icon(Icons.Default.Send, "Run", tint = Green) }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFF0D1711),
+                border = BorderStroke(1.dp, if (inputFocused) Green.copy(alpha = 0.9f) else Color(0xFF294133))
+            ) {
+                Column(
+                    Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Icon(Icons.Default.Code, contentDescription = null, tint = Green, modifier = Modifier.size(17.dp))
+                            Text("COMMAND CONSOLE", color = Color(0xFFDCEBE0), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                        }
+                        Surface(shape = RoundedCornerShape(50.dp), color = Color(0xFF173322)) {
+                            Row(
+                                Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(Modifier.size(6.dp).background(Green, CircleShape))
+                                Text("PRoot", color = Green, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(9.dp)
+                    ) {
+                        Surface(
+                            modifier = Modifier.weight(1f).heightIn(min = 56.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            color = Color(0xFF050B07),
+                            border = BorderStroke(1.dp, if (inputFocused) Green.copy(alpha = 0.75f) else Color(0xFF20392B))
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("root@cybx", color = Green, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(":~#", color = Muted, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                                Spacer(Modifier.width(9.dp))
+                                Box(Modifier.weight(1f)) {
+                                    if (input.isEmpty()) {
+                                        Text(
+                                            "Type a Kali command…",
+                                            color = Color(0xFF718579),
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                    BasicTextField(
+                                        value = input,
+                                        onValueChange = onInput,
+                                        modifier = Modifier.fillMaxWidth().onFocusChanged { inputFocused = it.isFocused },
+                                        singleLine = true,
+                                        textStyle = LocalTextStyle.current.copy(
+                                            color = Color(0xFFE5F2E9),
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 12.sp
+                                        ),
+                                        cursorBrush = SolidColor(Green),
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                        keyboardActions = KeyboardActions(onSend = { submitCommand() })
+                                    )
+                                }
+                            }
+                        }
+                        Button(
+                            onClick = { submitCommand() },
+                            enabled = input.isNotBlank(),
+                            modifier = Modifier.size(width = 56.dp, height = 56.dp),
+                            shape = RoundedCornerShape(15.dp),
+                            contentPadding = PaddingValues(0.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Green,
+                                contentColor = Bg,
+                                disabledContainerColor = Color(0xFF1B3023),
+                                disabledContentColor = Color(0xFF789080)
+                            )
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = "Run command", modifier = Modifier.size(27.dp))
+                        }
+                    }
+
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("ENTER", color = Green, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text("to execute", color = Muted, fontSize = 9.sp)
+                        }
+                        Text("COMMANDS RUN IN KALI", color = Muted, fontSize = 9.sp, letterSpacing = 0.5.sp)
+                    }
+                }
             }
-            Text("Persistent shell via PRoot / ProcessBuilder. Full-screen TUI applications are not supported in this phase.", color = Muted, fontSize = 10.sp)
+
+            Text(
+                "Persistent PRoot session · Full-screen TUI apps such as nano and vim are not supported yet.",
+                color = Muted,
+                fontSize = 10.sp
+            )
         }
     }
 }
