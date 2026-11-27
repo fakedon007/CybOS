@@ -41,6 +41,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cybx.os.agent.CybxRepository
+import com.cybx.os.agent.CybxAgentController
+import com.cybx.os.agent.CybxAgentToolRunner
+import com.cybx.os.agent.CybxAgentUiMessage
+import com.cybx.os.agent.CybxPendingAction
 import com.cybx.os.agent.LabScope
 import com.cybx.os.agent.SafeScanPlan
 import com.cybx.os.agent.SafeTcpScanner
@@ -85,6 +89,8 @@ private fun CybXApp() {
     val shell = remember { CybxShell(context, paths) }
     val aiClient = remember { CybxAiClient() }
     val scanner = remember { SafeTcpScanner() }
+    val agentToolRunner = remember { CybxAgentToolRunner(context, paths, repository, scanner, shell) }
+    val agentController = remember { CybxAgentController(context, aiClient, agentToolRunner) }
     val scope = rememberCoroutineScope()
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
@@ -104,6 +110,10 @@ private fun CybXApp() {
     var history by remember { mutableStateOf(repository.loadTasks()) }
     var exportRecord by remember { mutableStateOf<TaskRecord?>(null) }
     var exportMessage by remember { mutableStateOf("") }
+    val agentChatMessages = remember { mutableStateListOf<CybxAgentUiMessage>().apply { addAll(agentController.snapshot()) } }
+    var agentChatInput by remember { mutableStateOf("") }
+    var agentChatBusy by remember { mutableStateOf(false) }
+    var pendingToolApproval by remember { mutableStateOf<CybxPendingAction?>(null) }
 
     val rootfsReady = remember(refresh) { paths.isRootfsInstalled() }
     val runtimeProblem = remember(refresh) { ProotAdapter(context, paths).readinessError() }
@@ -206,7 +216,7 @@ private fun CybXApp() {
                         Text(page.title, color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
                     }
                     Spacer(Modifier.weight(1f))
-                    Text("v0.5.0", color = Muted, fontSize = 11.sp)
+                    Text("v0.6.0", color = Muted, fontSize = 11.sp)
                 }
             },
             bottomBar = {
@@ -245,71 +255,60 @@ private fun CybXApp() {
                         onDocs = { openUrl(context, "https://www.kali.org/docs/nethunter/nethunter-rootless/") },
                         onRefresh = { refresh++ }
                     )
-                    Page.AGENT -> AgentPage(
-                        request = request, onRequest = { request = it },
-                        scopeText = repository.loadScope(),
-                        plan = plan, explanation = planExplanation, logs = liveLogs,
-                        busy = agentBusy, error = agentError,
-                        onDraft = {
-                            agentError = null
-                            planExplanation = ""
-                            try {
-                                val draft = LabScope.draft(request, repository.loadScope())
-                                plan = draft
-                                repository.audit("Task drafted", "target=${draft.targetCidr}; hosts=${draft.hosts.size}; ports=${draft.ports.joinToString(",")}")
-                                planExplanation = "Validated private-lab TCP service check. Only the displayed target and fixed safe port list will be scanned."
+                    Page.AGENT -> ConversationalAgentPage(
+                        messages = agentChatMessages,
+                        input = agentChatInput,
+                        busy = agentChatBusy,
+                        pending = pendingToolApproval,
+                        onInput = { agentChatInput = it },
+                        onSend = {
+                            val message = agentChatInput.trim()
+                            if (message.isNotEmpty() && !agentChatBusy && pendingToolApproval == null) {
+                                agentChatInput = ""
                                 scope.launch {
-                                    val aiText = runCatching { aiClient.explainTask(request, draft.targetCidr, repository.loadAiConfig()) }.getOrNull()
-                                    if (!aiText.isNullOrBlank()) planExplanation = aiText
-                                }
-                            } catch (e: Exception) {
-                                plan = null
-                                agentError = e.message ?: "Could not create a safe task."
-                                repository.audit("Task blocked", agentError ?: "Unknown validation error")
-                            }
-                        },
-                        onRun = {
-                            val approved = plan
-                            if (approved != null) scope.launch {
-                                agentBusy = true
-                                agentError = null
-                                currentRecord = null
-                                liveLogs.clear()
-                                liveLogs.add("User approved scan: ${approved.targetCidr}")
-                                repository.audit("Scan approved", "target=${approved.targetCidr}; hosts=${approved.hosts.size}")
-                                try {
-                                    val findings = scanner.run(approved) { line ->
-                                        mainHandler.post {
-                                            if (liveLogs.size > 500) liveLogs.removeAt(0)
-                                            liveLogs.add(line)
-                                        }
+                                    agentChatBusy = true
+                                    try {
+                                        agentController.send(
+                                            message,
+                                            repository.loadAiConfig(),
+                                            { item -> agentChatMessages.add(item) },
+                                            { pendingToolApproval = it }
+                                        )
+                                    } catch (e: Exception) {
+                                        agentChatMessages.add(CybxAgentUiMessage(role = "assistant", text = "AI Agent error: " + (e.message ?: "Unknown error")))
+                                        repository.audit("Agent request failed", e.message ?: "Unknown error")
+                                    } finally {
+                                        agentChatBusy = false
                                     }
-                                    val observed = findings.map { "${it.host} TCP/${it.port} ${it.service} open" }
-                                    val aiSummary = runCatching {
-                                        aiClient.analyseResults(approved.targetCidr, observed, repository.loadAiConfig())
-                                    }.getOrNull()
-                                    val fallback = if (findings.isEmpty()) {
-                                        "No open ports were observed on the selected TCP ports. This does not prove the host is offline or secure."
-                                    } else {
-                                        "Observed ${findings.size} open TCP service(s). Review service exposure and confirm each service is expected. No exploitation was performed."
-                                    }
-                                    val summary = aiSummary?.takeIf { it.isNotBlank() } ?: fallback
-                                    val record = newTaskRecord(request, approved, findings, summary, liveLogs.toList())
-                                    repository.saveTask(record)
-                                    currentRecord = record
-                                    history = repository.loadTasks()
-                                    liveLogs.add("Report ready. Open Reports to export PDF or HTML.")
-                                    plan = null
-                                } catch (e: Exception) {
-                                    agentError = e.message ?: "Task execution failed"
-                                    repository.audit("Scan failed", agentError ?: "Unknown error")
-                                } finally {
-                                    agentBusy = false
                                 }
                             }
                         },
-                        onCancel = { plan = null; planExplanation = "" },
-                        onReports = { page = Page.REPORTS }
+                        onResolve = { approve ->
+                            if (!agentChatBusy && pendingToolApproval != null) {
+                                scope.launch {
+                                    agentChatBusy = true
+                                    try {
+                                        agentController.resolvePending(
+                                            approve,
+                                            repository.loadAiConfig(),
+                                            { item -> agentChatMessages.add(item) },
+                                            { pendingToolApproval = it }
+                                        )
+                                    } catch (e: Exception) {
+                                        agentChatMessages.add(CybxAgentUiMessage(role = "assistant", text = "Action error: " + (e.message ?: "Unknown error")))
+                                    } finally {
+                                        agentChatBusy = false
+                                    }
+                                }
+                            }
+                        },
+                        onNewChat = {
+                            agentController.clearConversation()
+                            agentChatMessages.clear()
+                            pendingToolApproval = null
+                            agentChatInput = ""
+                        },
+                        onReports = { history = repository.loadTasks(); page = Page.REPORTS }
                     )
                     Page.TERMINAL -> TerminalPage(
                         ready = runtimeReady, problem = runtimeProblem,
@@ -797,5 +796,170 @@ private fun SettingsPage(repository: CybxRepository, onSaved: () -> Unit) {
         Text("PLATFORM LIMITATIONS", color = Amber, fontWeight = FontWeight.Bold)
         Text("CybX is a rootless Android userspace, not a bootable OS. USB Wi-Fi monitor mode, packet injection, HID and kernel-level features require compatible rooted/device kernels and are not promised on stock Xiaomi firmware.", color = Muted, fontSize = 11.sp)
         Text("AI model output is advisory. It never becomes a shell command. Only the built-in bounded private-lab TCP scan task can be run by the Agent.", color = Muted, fontSize = 11.sp)
+    }
+}
+
+
+@Composable
+private fun ConversationalAgentPage(
+    messages: List<CybxAgentUiMessage>,
+    input: String,
+    busy: Boolean,
+    pending: CybxPendingAction?,
+    onInput: (String) -> Unit,
+    onSend: () -> Unit,
+    onResolve: (Boolean) -> Unit,
+    onNewChat: () -> Unit,
+    onReports: () -> Unit
+) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text("CONVERSATIONAL AI OPERATOR", color = Green, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp)
+                Text("Talk naturally · CybX tools · approval-controlled actions", color = Muted, fontSize = 9.sp)
+            }
+            Row {
+                IconButton(onClick = onReports) { Icon(Icons.Default.Assessment, contentDescription = "Reports", tint = Green) }
+                IconButton(onClick = onNewChat, enabled = !busy && pending == null) { Icon(Icons.Default.AddComment, contentDescription = "New chat", tint = Green) }
+            }
+        }
+
+        if (messages.isEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Panel),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Hi! I'm CybX AI.", color = Green, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("বাংলা বা English-এ বলো কী করতে হবে। আমি app-এর supported tools ব্যবহার করে কাজ করব, ফলাফল দেখব এবং দরকার হলে পরের ধাপ নেব।", color = Color.White, fontSize = 12.sp)
+                    Text("Try these:", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("• Check my Kali setup and explain any problem.", color = Muted, fontSize = 11.sp)
+                    Text("• Search for the kex package, then ask before installing.", color = Muted, fontSize = 11.sp)
+                    Text("• Scan my approved private lab and prepare a report.", color = Muted, fontSize = 11.sp)
+                    Text("• Create a notes file in the CybX workspace.", color = Muted, fontSize = 11.sp)
+                }
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            items(messages, key = { it.id }) { message ->
+                val user = message.role == "user"
+                val system = message.role == "system"
+                val tool = message.role == "tool"
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = if (user) Arrangement.End else Arrangement.Start
+                ) {
+                    Card(
+                        modifier = Modifier.widthIn(max = 340.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = when {
+                                user -> Color(0xFF173322)
+                                system -> Color(0xFF18221C)
+                                tool -> Color(0xFF111B24)
+                                else -> Panel
+                            }
+                        ),
+                        shape = RoundedCornerShape(if (user) 18.dp else 13.dp)
+                    ) {
+                        Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                when {
+                                    user -> "YOU"
+                                    system -> "CYBX STATUS"
+                                    tool -> "APP TOOL RESULT"
+                                    else -> "CYBX AI"
+                                },
+                                color = if (user || system) Green else Muted,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                            Text(
+                                message.text,
+                                color = if (system) Muted else Color(0xFFE5F0E8),
+                                fontSize = if (tool) 10.sp else 12.sp,
+                                fontFamily = if (tool) FontFamily.Monospace else FontFamily.Default
+                            )
+                        }
+                    }
+                }
+            }
+            if (busy) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(Modifier.size(15.dp), color = Green, strokeWidth = 2.dp)
+                        Text("CybX is thinking / running an approved tool…", color = Muted, fontSize = 10.sp)
+                    }
+                }
+            }
+        }
+
+        if (pending != null) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF241D12)),
+                border = BorderStroke(1.dp, Amber.copy(alpha = 0.75f)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = Amber)
+                        Text("APPROVAL REQUIRED", color = Amber, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                    Text(pending.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(pending.description, color = Muted, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+                    Text("Nothing will run until you approve this action.", color = Amber, fontSize = 10.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { onResolve(true) },
+                            modifier = Modifier.weight(1f),
+                            enabled = !busy,
+                            colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Bg)
+                        ) { Icon(Icons.Default.Check, null); Spacer(Modifier.width(5.dp)); Text("Approve") }
+                        OutlinedButton(
+                            onClick = { onResolve(false) },
+                            modifier = Modifier.weight(1f),
+                            enabled = !busy
+                        ) { Icon(Icons.Default.Close, null); Spacer(Modifier.width(5.dp)); Text("Decline") }
+                    }
+                }
+            }
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            OutlinedTextField(
+                value = input,
+                onValueChange = onInput,
+                modifier = Modifier.weight(1f),
+                enabled = !busy && pending == null,
+                minLines = 1,
+                maxLines = 4,
+                placeholder = { Text("Tell CybX what to do…", fontSize = 12.sp) },
+                shape = RoundedCornerShape(16.dp),
+                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
+            )
+            FilledIconButton(
+                onClick = onSend,
+                enabled = !busy && pending == null && input.isNotBlank(),
+                modifier = Modifier.size(52.dp),
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = Green, contentColor = Bg)
+            ) {
+                Icon(Icons.Default.Send, contentDescription = "Send")
+            }
+        }
+        Text("Actions that change Kali, write files or scan networks always ask for approval.", color = Muted, fontSize = 9.sp)
     }
 }
