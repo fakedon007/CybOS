@@ -7,7 +7,8 @@ on:
     paths:
       - ".github/workflows/build-android-apk.yml"
       - "app-source-v0.4.1.zip"
-      - "source-overlay/v0.4.2/app/build.gradle.kts"
+      - "source-overlay/v0.4.3/app/build.gradle.kts"
+      - "source-overlay/v0.4.3/app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt"
 
 permissions:
   contents: read
@@ -37,20 +38,25 @@ jobs:
           test -f app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
           echo "CybX source restored successfully."
 
-      - name: Apply CybX 0.4.2 runtime dependency fix
+      - name: Apply CybX 0.4.3 terminal startup guard and dependency fixes
         shell: bash
         run: |
           set -euo pipefail
-          test -f source-overlay/v0.4.2/app/build.gradle.kts
-          cp source-overlay/v0.4.2/app/build.gradle.kts app/build.gradle.kts
+          test -f source-overlay/v0.4.3/app/build.gradle.kts
+          test -f source-overlay/v0.4.3/app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
+          cp source-overlay/v0.4.3/app/build.gradle.kts app/build.gradle.kts
+          cp source-overlay/v0.4.3/app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
           grep -q 'androidx.concurrent:concurrent-futures:1.2.0' app/build.gradle.kts
           grep -q 'com.google.guava:listenablefuture:1.0' app/build.gradle.kts
           ! grep -q '9999.0-empty-to-avoid-conflict-with-guava' app/build.gradle.kts
-          grep -q 'versionCode = 11' app/build.gradle.kts
-          grep -q 'versionName = "0.4.2"' app/build.gradle.kts
+          grep -q 'versionCode = 12' app/build.gradle.kts
+          grep -q 'versionName = "0.4.3"' app/build.gradle.kts
+          grep -q 'OnGlobalLayoutListener' app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
+          grep -q 'attachMeasuredView' app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
+          grep -q 'CybX-Terminal' app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
           grep -q 'painterResource(R.drawable.ic_launcher_foreground)' app/src/main/java/com/cybx/os/MainActivity.kt
           ! grep -q 'painterResource(R.mipmap.ic_launcher)' app/src/main/java/com/cybx/os/MainActivity.kt
-          echo "CybX 0.4.2 dependency and Compose crash fixes validated."
+          echo "CybX 0.4.3 terminal startup guard and dependency fixes validated."
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -107,10 +113,10 @@ jobs:
           mkdir -p dist
           if [ "$CYBX_STABLE_SIGNING" = "true" ]; then
             gradle --no-daemon :app:assembleRelease
-            cp app/build/outputs/apk/release/app-release.apk dist/CybX-OS-v0.4.2-release.apk
+            cp app/build/outputs/apk/release/app-release.apk dist/CybX-OS-v0.4.3-release.apk
           else
             gradle --no-daemon :app:assembleDebug
-            cp app/build/outputs/apk/debug/app-debug.apk dist/CybX-OS-v0.4.2-debug.apk
+            cp app/build/outputs/apk/debug/app-debug.apk dist/CybX-OS-v0.4.3-debug.apk
           fi
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/*.apk
           sha256sum dist/*.apk > dist/SHA256SUMS.txt
@@ -118,7 +124,7 @@ jobs:
       - name: Upload CybX APK
         uses: actions/upload-artifact@v4
         with:
-          name: CybX-OS-v0.4.2-APK
+          name: CybX-OS-v0.4.3-APK
           path: dist/*
           if-no-files-found: error
           retention-days: 90
