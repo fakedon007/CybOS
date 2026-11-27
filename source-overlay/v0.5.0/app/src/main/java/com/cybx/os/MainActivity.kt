@@ -23,6 +23,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -812,6 +813,10 @@ private fun ConversationalAgentPage(
     onNewChat: () -> Unit,
     onReports: () -> Unit
 ) {
+    val chatListState = rememberLazyListState()
+    LaunchedEffect(messages.size, busy, pending) {
+        if (messages.isNotEmpty()) chatListState.animateScrollToItem(messages.lastIndex)
+    }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             Modifier.fillMaxWidth(),
@@ -847,6 +852,7 @@ private fun ConversationalAgentPage(
         }
 
         LazyColumn(
+            state = chatListState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
