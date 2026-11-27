@@ -774,12 +774,12 @@ private fun SettingsPage(repository: CybxRepository, onSaved: () -> Unit) {
         if (provider == "ollama") {
             OutlinedTextField(ollamaUrl, { ollamaUrl = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Ollama URL") })
             OutlinedTextField(ollamaModel, { ollamaModel = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Ollama model") })
-            Text("For Ollama on a PC, enter its private LAN address, e.g. http://192.168.1.5:11434. The app only allows HTTP to localhost/private LAN addresses.", color = Muted, fontSize = 10.sp)
+            Text("For Ollama on a PC, enter its private LAN address, e.g. http://192.168.1.5:11434. The app only allows HTTP to localhost/private LAN addresses. Choose a model that supports tool/function calling for AI Agent actions.", color = Muted, fontSize = 10.sp)
         } else {
             OutlinedTextField(cloudUrl, { cloudUrl = it }, modifier = Modifier.fillMaxWidth(), label = { Text("OpenAI-compatible HTTPS endpoint") })
             OutlinedTextField(cloudModel, { cloudModel = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Cloud model") })
             OutlinedTextField(cloudKey, { cloudKey = it }, modifier = Modifier.fillMaxWidth(), label = { Text("API key") }, visualTransformation = PasswordVisualTransformation())
-            Text("The API key is encrypted with Android Keystore before it is stored locally. Cloud requests are HTTPS-only.", color = Muted, fontSize = 10.sp)
+            Text("The API key is encrypted with Android Keystore before it is stored locally. Cloud requests are HTTPS-only. AI Agent actions require a model with tool/function-calling support.", color = Muted, fontSize = 10.sp)
         }
         Button(onClick = {
             try {
