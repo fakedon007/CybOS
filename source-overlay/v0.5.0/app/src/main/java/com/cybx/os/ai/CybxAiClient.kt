@@ -43,7 +43,7 @@ class CybxAiClient {
 
     fun toolResultMessage(callId: String, toolName: String, result: String, config: AiConfig): JSONObject {
         val message = JSONObject().put("role", "tool").put("content", result)
-        if (config.provider == "ollama") {
+        if (usesNativeOllamaApi(config)) {
             message.put("tool_name", toolName)
         } else {
             message.put("tool_call_id", callId)
@@ -51,23 +51,66 @@ class CybxAiClient {
         return message
     }
 
+    private fun usesNativeOllamaApi(config: AiConfig): Boolean {
+        if (config.provider == "ollama") return true
+        return try {
+            val uri = URI(config.cloudUrl.trim())
+            uri.scheme.equals("https", true) &&
+                uri.host.equals("ollama.com", true) &&
+                uri.path.equals("/api/chat", true)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun isOllamaOpenAiCloud(config: AiConfig): Boolean {
+        return try {
+            val uri = URI(config.cloudUrl.trim())
+            uri.scheme.equals("https", true) &&
+                uri.host.equals("ollama.com", true) &&
+                uri.path.equals("/v1/chat/completions", true)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun errorMessage(code: Int, body: String, provider: String): String {
+        val jsonError = runCatching {
+            val json = JSONObject(body)
+            json.optString("error").ifBlank { json.optString("message") }
+        }.getOrNull().orEmpty()
+        if (code == 403 && (body.contains("<html", true) || body.contains("<!doctype", true))) {
+            return "HTTP 403 from $provider: the cloud gateway denied this request. Verify that the key is an Ollama API key from Settings > API keys, confirm the account has model access/usage available, and check the endpoint. The server returned an HTML forbidden page rather than a model error."
+        }
+        return "AI provider HTTP $code: " + (jsonError.ifBlank { body.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim() }).take(450)
+    }
+
     /**
-     * Makes one tool-aware assistant turn using Ollama /api/chat or an OpenAI-compatible
-     * chat-completions endpoint. The app executes returned tools locally after policy checks.
+     * Makes one tool-aware assistant turn. Ollama Cloud can use either its native
+     * /api/chat API or its OpenAI-compatible /v1/chat/completions API.
      */
     suspend fun agentResponse(messages: List<JSONObject>, config: AiConfig): CybxModelTurn =
         withContext(Dispatchers.IO) {
-            val useOllama = config.provider == "ollama"
-            val endpoint = if (useOllama) config.ollamaUrl.trimEnd('/') + "/api/chat" else config.cloudUrl.trim()
-            if (useOllama) {
+            val useLocalOllama = config.provider == "ollama"
+            val nativeOllama = usesNativeOllamaApi(config)
+            val endpoint = when {
+                useLocalOllama -> config.ollamaUrl.trimEnd('/') + "/api/chat"
+                else -> config.cloudUrl.trim()
+            }
+            if (useLocalOllama) {
                 require(isAllowedOllamaUrl(endpoint)) {
-                    "Ollama HTTP endpoint must be localhost or a private LAN address. Use HTTPS for public endpoints."
+                    "Local Ollama endpoint must be localhost or a private LAN address."
                 }
             } else {
-                require(endpoint.startsWith("https://", ignoreCase = true)) { "Cloud AI endpoint must use HTTPS." }
+                require(endpoint.startsWith("https://", ignoreCase = true)) {
+                    "Cloud AI endpoint must use HTTPS."
+                }
                 require(config.cloudApiKey.isNotBlank()) { "Cloud AI API key is not configured." }
+                require(isOllamaOpenAiCloud(config) || nativeOllama || endpoint.startsWith("https://")) {
+                    "Unsupported cloud endpoint."
+                }
             }
-            val model = if (useOllama) config.ollamaModel else config.cloudModel
+            val model = if (useLocalOllama) config.ollamaModel else config.cloudModel
             require(model.isNotBlank()) { "AI model name is empty." }
 
             val body = JSONObject()
@@ -75,10 +118,9 @@ class CybxAiClient {
                 .put("messages", JSONArray(messages))
                 .put("tools", com.cybx.os.agent.CybxAgentToolRegistry.definitions())
                 .put("stream", false)
-            if (useOllama) {
+            if (nativeOllama) {
                 body.put("options", JSONObject().put("temperature", 0.15))
             } else {
-                // Ollama Cloud supports tools on /v1/chat/completions but not tool_choice.
                 body.put("temperature", 0.15)
             }
 
@@ -88,16 +130,18 @@ class CybxAiClient {
                 readTimeout = 90_000
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
-                if (!useOllama) setRequestProperty("Authorization", "Bearer " + config.cloudApiKey)
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("User-Agent", "CybX-Mobile-AI/0.6.1")
+                if (!useLocalOllama) setRequestProperty("Authorization", "Bearer " + config.cloudApiKey)
             }
             try {
                 connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
                 val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (code !in 200..299) error("AI provider HTTP " + code + ": " + response.take(500))
+                if (code !in 200..299) error(errorMessage(code, response, if (nativeOllama) "Ollama Cloud" else "cloud provider"))
                 val root = JSONObject(response)
-                val message = if (useOllama) {
+                val message = if (nativeOllama) {
                     root.optJSONObject("message")
                 } else {
                     root.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
@@ -122,14 +166,11 @@ class CybxAiClient {
                     )
                 }
 
-                // This phase deliberately serializes one tool call at a time.
                 val protocolMessage = JSONObject(message.toString())
                 if (toolCall != null) {
                     val protocolCalls = protocolMessage.optJSONArray("tool_calls")
                     val protocolCall = protocolCalls?.optJSONObject(0)
-                    // Native Ollama /api/chat replays tool_name without an ID; OpenAI-compatible
-                    // chat completions correlate tool replies using tool_call_id.
-                    if (!useOllama) protocolCall?.put("id", toolCall.id)
+                    if (!nativeOllama) protocolCall?.put("id", toolCall.id)
                     if (protocolCall != null) protocolMessage.put("tool_calls", JSONArray().put(protocolCall))
                 }
                 CybxModelTurn(
@@ -141,6 +182,54 @@ class CybxAiClient {
                 connection.disconnect()
             }
         }
+
+    /** Performs a simple authenticated request without tools to verify endpoint, key and model. */
+    suspend fun testConnection(config: AiConfig): String = withContext(Dispatchers.IO) {
+        val useLocalOllama = config.provider == "ollama"
+        val nativeOllama = usesNativeOllamaApi(config)
+        val endpoint = if (useLocalOllama) config.ollamaUrl.trimEnd('/') + "/api/chat" else config.cloudUrl.trim()
+        if (useLocalOllama) {
+            require(isAllowedOllamaUrl(endpoint)) { "Local Ollama URL must be localhost or a private LAN address." }
+        } else {
+            require(endpoint.startsWith("https://", true)) { "Cloud endpoint must use HTTPS." }
+            require(config.cloudApiKey.isNotBlank()) { "API key is empty." }
+        }
+        val model = if (useLocalOllama) config.ollamaModel.trim() else config.cloudModel.trim()
+        require(model.isNotBlank()) { "Model name is empty." }
+
+        val messages = JSONArray().put(JSONObject().put("role", "user").put("content", "Reply with exactly: CYBX_OK"))
+        val body = JSONObject()
+            .put("model", model)
+            .put("messages", messages)
+            .put("stream", false)
+        if (nativeOllama) body.put("options", JSONObject().put("temperature", 0))
+        else body.put("temperature", 0)
+
+        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 12_000
+            readTimeout = 60_000
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("User-Agent", "CybX-Mobile-AI/0.6.1")
+            if (!useLocalOllama) setRequestProperty("Authorization", "Bearer " + config.cloudApiKey)
+        }
+        try {
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) error(errorMessage(code, response, if (nativeOllama) "Ollama Cloud" else "cloud provider"))
+            val root = JSONObject(response)
+            val reply = if (nativeOllama) root.optJSONObject("message")?.optString("content")
+                else root.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
+            "Connection successful · model $model · " + (reply?.take(160) ?: "API responded successfully")
+        } finally {
+            connection.disconnect()
+        }
+    }
+
 
     suspend fun explainTask(request: String, target: String, config: AiConfig): String? =
         ask(
