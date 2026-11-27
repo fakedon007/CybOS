@@ -6,7 +6,7 @@ on:
     branches: [ main ]
     paths:
       - ".github/workflows/build-android-apk.yml"
-      - "app-source-v0.3.3.zip"
+      - "app-source-v0.4.0.zip"
       - "cybx-v0.4.0.patch"
 
 permissions:
@@ -19,23 +19,23 @@ jobs:
       - name: Checkout CybX source
         uses: actions/checkout@v4
 
-      - name: Restore v0.3.3 source and apply tested v0.4.1 patch
+      - name: Restore CybX v0.4.0 project source
         shell: bash
         run: |
           set -euxo pipefail
-          pwd
-          ls -lah
-          test -f app-source-v0.3.3.zip
-          test -f cybx-v0.4.0.patch
-          unzip -t app-source-v0.3.3.zip | tail -3
-          unzip -oq app-source-v0.3.3.zip -d .
-          echo "=== Extracted app files ==="
-          find app -maxdepth 6 -type f | sort | head -100
+          test -f app-source-v0.4.0.zip
+          mkdir -p "$RUNNER_TEMP/cybx-source"
+          unzip -oq app-source-v0.4.0.zip -d "$RUNNER_TEMP/cybx-source"
+          APP_GRADLE="$(find "$RUNNER_TEMP/cybx-source" -type f -path '*/app/build.gradle.kts' -print -quit)"
+          test -n "$APP_GRADLE"
+          PROJECT_ROOT="${APP_GRADLE%/app/build.gradle.kts}"
+          echo "Using source root: $PROJECT_ROOT"
+          cp -a "$PROJECT_ROOT/." "$GITHUB_WORKSPACE/"
+          test -f app/build.gradle.kts
+          test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/java/com/cybx/os/MainActivity.kt
-          patch --batch --forward -p1 < cybx-v0.4.0.patch || echo "Patch reported already-applied/conflicting hunks; checking resulting project."
-          echo "=== Required patched files ==="
-          find app/src/main -type f | grep -E 'CybxTerminalHost|ic_launcher|LocalRuntimeInstaller|MainActivity' || true
           test -f app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
+          echo "CybX source restored successfully."
 
       - name: Fix adaptive icon Compose crash and bump version
         shell: bash
