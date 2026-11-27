@@ -6,8 +6,7 @@ on:
     branches: [ main ]
     paths:
       - ".github/workflows/build-android-apk.yml"
-      - "app-source-v0.4.0.zip"
-      - "cybx-v0.4.0.patch"
+      - "app-source-v0.4.1.zip"
 
 permissions:
   contents: read
@@ -19,13 +18,13 @@ jobs:
       - name: Checkout CybX source
         uses: actions/checkout@v4
 
-      - name: Restore CybX v0.4.0 project source
+      - name: Restore CybX v0.4.1 project source
         shell: bash
         run: |
           set -euxo pipefail
-          test -f app-source-v0.4.0.zip
+          test -f app-source-v0.4.1.zip
           mkdir -p "$RUNNER_TEMP/cybx-source"
-          unzip -oq app-source-v0.4.0.zip -d "$RUNNER_TEMP/cybx-source"
+          unzip -oq app-source-v0.4.1.zip -d "$RUNNER_TEMP/cybx-source"
           APP_GRADLE="$(find "$RUNNER_TEMP/cybx-source" -type f -path '*/app/build.gradle.kts' -print -quit)"
           test -n "$APP_GRADLE"
           PROJECT_ROOT="${APP_GRADLE%/app/build.gradle.kts}"
@@ -37,33 +36,15 @@ jobs:
           test -f app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
           echo "CybX source restored successfully."
 
-      - name: Fix adaptive icon Compose crash and bump version
+      - name: Validate crash fix and app version
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          p = Path("app/src/main/java/com/cybx/os/MainActivity.kt")
-          s = p.read_text()
-          if "painterResource(R.mipmap.ic_launcher)" not in s:
-              raise SystemExit("Expected adaptive-icon painter usage was not found")
-          s = s.replace("painterResource(R.mipmap.ic_launcher)", "painterResource(R.drawable.ic_launcher_foreground)")
-          p.write_text(s)
-          g = Path("app/build.gradle.kts")
-          t = g.read_text()
-          if "versionCode = 9" not in t or 'versionName = "0.4.0"' not in t:
-              raise SystemExit("Unexpected source version; refusing unsafe version edit")
-          t = t.replace("versionCode = 9", "versionCode = 10", 1)
-          t = t.replace('versionName = "0.4.0"', 'versionName = "0.4.1"', 1)
-          g.write_text(t)
-          if "painterResource(R.mipmap.ic_launcher)" in s:
-              raise SystemExit("Adaptive icon reference still present in Compose UI")
-          print("Replaced AdaptiveIconDrawable resource with foreground VectorDrawable; version 0.4.1")
-          PY
+          grep -q 'painterResource(R.drawable.ic_launcher_foreground)' app/src/main/java/com/cybx/os/MainActivity.kt
+          ! grep -q 'painterResource(R.mipmap.ic_launcher)' app/src/main/java/com/cybx/os/MainActivity.kt
           grep -q 'versionCode = 10' app/build.gradle.kts
           grep -q 'versionName = "0.4.1"' app/build.gradle.kts
-          ! grep -q 'painterResource(R.mipmap.ic_launcher)' app/src/main/java/com/cybx/os/MainActivity.kt
+          echo "Validated Compose-safe launcher resource and CybX 0.4.1 version."
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -110,7 +91,7 @@ jobs:
             echo "CYBX_STABLE_SIGNING=true" >> "$GITHUB_ENV"
           else
             echo "CYBX_STABLE_SIGNING=false" >> "$GITHUB_ENV"
-            echo "::warning::Stable signing secrets are not configured. A temporary debug-signed APK will be produced; it will not be compatible as an in-place update from earlier signing keys."
+            echo "::warning::Stable signing secrets are not configured. A temporary debug-signed APK will be produced; it may not install as an in-place update from an APK signed with another key."
           fi
 
       - name: Build APK and verify package signature
