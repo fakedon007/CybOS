@@ -5,6 +5,7 @@ import com.cybx.os.runtime.CybxPRootRunner
 import com.cybx.os.runtime.CybxPaths
 import com.cybx.os.runtime.CybxShell
 import com.cybx.os.runtime.ProotAdapter
+import com.cybx.os.reports.ReportExporter
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -72,6 +73,8 @@ object CybxAgentToolRegistry {
             .put("content", stringField("Text content to write, maximum 100 KB."))
         tools.put(tool("write_workspace_file", "Create or replace a text file inside the private workspace. Requires user approval.", objectSchema(writeProps, JSONArray().put("path").put("content"))))
         tools.put(tool("save_latest_report_to_workspace", "Create a Markdown report file for the latest completed task inside /root/cybx-workspace. Requires user approval.", objectSchema()))
+        tools.put(tool("export_latest_report_pdf", "Export the latest completed task report as a PDF file into /root/cybx-workspace. Requires user approval.", objectSchema()))
+        tools.put(tool("export_latest_report_html", "Export the latest completed task report as an HTML file into /root/cybx-workspace. Requires user approval.", objectSchema()))
         return tools
     }
 
@@ -80,7 +83,9 @@ object CybxAgentToolRegistry {
         "install_kali_packages",
         "scan_authorized_private_target",
         "write_workspace_file",
-        "save_latest_report_to_workspace"
+        "save_latest_report_to_workspace",
+        "export_latest_report_pdf",
+        "export_latest_report_html"
     )
 }
 
@@ -108,6 +113,8 @@ class CybxAgentToolRunner(
                 "read_workspace_file" -> readWorkspace(call.arguments.optString("path"))
                 "write_workspace_file" -> writeWorkspace(call.arguments.optString("path"), call.arguments.optString("content"))
                 "save_latest_report_to_workspace" -> saveLatestReport()
+                "export_latest_report_pdf" -> exportLatestReport("pdf")
+                "export_latest_report_html" -> exportLatestReport("html")
                 else -> error("Unknown CybX tool: " + call.name)
             }
         } catch (e: Exception) {
@@ -263,6 +270,25 @@ class CybxAgentToolRunner(
         file.writeText(content, Charsets.UTF_8)
         repository.audit("Agent wrote workspace file", relative)
         return JSONObject().put("ok", true).put("path", relative).put("characters_written", content.length).toString()
+    }
+
+    private fun exportLatestReport(format: String): String {
+        val latest = repository.loadTasks().firstOrNull() ?: error("No completed task report exists yet.")
+        val extension = if (format == "pdf") "pdf" else "html"
+        val fileName = "report-" + latest.id.take(8) + "." + extension
+        val file = safeWorkspaceFile(fileName)
+        if (format == "pdf") {
+            java.io.FileOutputStream(file).use { ReportExporter.writePdf(latest, it) }
+        } else {
+            file.writeText(ReportExporter.html(latest), Charsets.UTF_8)
+        }
+        repository.audit("Agent exported " + extension.uppercase() + " report", fileName)
+        return JSONObject()
+            .put("ok", true)
+            .put("format", extension)
+            .put("path", "/root/cybx-workspace/" + fileName)
+            .put("bytes", file.length())
+            .toString()
     }
 
     private fun saveLatestReport(): String {
