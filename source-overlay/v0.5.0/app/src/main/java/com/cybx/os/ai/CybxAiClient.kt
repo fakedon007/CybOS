@@ -127,7 +127,9 @@ class CybxAiClient {
                 if (toolCall != null) {
                     val protocolCalls = protocolMessage.optJSONArray("tool_calls")
                     val protocolCall = protocolCalls?.optJSONObject(0)
-                    protocolCall?.put("id", toolCall.id)
+                    // Native Ollama /api/chat replays tool_name without an ID; OpenAI-compatible
+                    // chat completions correlate tool replies using tool_call_id.
+                    if (!useOllama) protocolCall?.put("id", toolCall.id)
                     if (protocolCall != null) protocolMessage.put("tool_calls", JSONArray().put(protocolCall))
                 }
                 CybxModelTurn(
