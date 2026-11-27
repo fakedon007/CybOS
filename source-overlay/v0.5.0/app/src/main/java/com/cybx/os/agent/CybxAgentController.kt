@@ -76,13 +76,7 @@ class CybxAgentController(
             )
             JSONObject().put("ok", false).put("error", "The user declined this action. Do not retry unless the user asks again.").toString()
         }
-        protocol.add(
-            JSONObject()
-                .put("role", "tool")
-                .put("tool_call_id", call.id)
-                .put("tool_name", call.name)
-                .put("content", result.take(18_000))
-        )
+        protocol.add(aiClient.toolResultMessage(call.id, call.name, result.take(18_000), config))
         appendUi(
             CybxAgentUiMessage(role = "tool", text = "Tool result · " + call.name + "\n" + result.take(2500)),
             emit
@@ -138,13 +132,7 @@ class CybxAgentController(
             }
 
             val result = toolRunner.execute(call)
-            protocol.add(
-                JSONObject()
-                    .put("role", "tool")
-                    .put("tool_call_id", call.id)
-                    .put("tool_name", call.name)
-                    .put("content", result.take(18_000))
-            )
+            protocol.add(aiClient.toolResultMessage(call.id, call.name, result.take(18_000), config))
             appendUi(
                 CybxAgentUiMessage(role = "system", text = "Completed app tool: " + call.name),
                 emit
