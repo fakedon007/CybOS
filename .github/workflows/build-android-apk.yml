@@ -47,10 +47,10 @@ jobs:
           p.write_text(s)
           g = Path("app/build.gradle.kts")
           t = g.read_text()
-          t, a = re.subn(r"versionCode\\s*=\\s*\\d+", "versionCode = 10", t, count=1)
-          t, b = re.subn(r'versionName\\s*=\\s*"[^"]+"', 'versionName = "0.4.1"', t, count=1)
-          if a != 1 or b != 1:
-              raise SystemExit("Could not bump app version to 0.4.1")
+          if "versionCode = 9" not in t or 'versionName = "0.4.0"' not in t:
+              raise SystemExit("Unexpected source version; refusing unsafe version edit")
+          t = t.replace("versionCode = 9", "versionCode = 10", 1)
+          t = t.replace('versionName = "0.4.0"', 'versionName = "0.4.1"', 1)
           g.write_text(t)
           if "painterResource(R.mipmap.ic_launcher)" in s:
               raise SystemExit("Adaptive icon reference still present in Compose UI")
