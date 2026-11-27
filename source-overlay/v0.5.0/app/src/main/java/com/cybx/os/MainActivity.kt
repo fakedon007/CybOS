@@ -217,7 +217,7 @@ private fun CybXApp() {
                         Text(page.title, color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
                     }
                     Spacer(Modifier.weight(1f))
-                    Text("v0.6.0", color = Muted, fontSize = 11.sp)
+                    Text("v0.6.1", color = Muted, fontSize = 11.sp)
                 }
             },
             bottomBar = {
@@ -335,6 +335,7 @@ private fun CybXApp() {
                     )
                     Page.SETTINGS -> SettingsPage(
                         repository = repository,
+                        aiClient = aiClient,
                         onSaved = { repository.audit("Settings saved", "lab scope and AI provider settings updated") }
                     )
                 }
@@ -746,7 +747,11 @@ private fun ReportsPage(
 }
 
 @Composable
-private fun SettingsPage(repository: CybxRepository, onSaved: () -> Unit) {
+private fun SettingsPage(
+    repository: CybxRepository,
+    aiClient: CybxAiClient,
+    onSaved: () -> Unit
+) {
     var scopes by remember { mutableStateOf(repository.loadScope()) }
     val initial = remember { repository.loadAiConfig() }
     var provider by remember { mutableStateOf(initial.provider) }
@@ -756,6 +761,8 @@ private fun SettingsPage(repository: CybxRepository, onSaved: () -> Unit) {
     var cloudModel by remember { mutableStateOf(initial.cloudModel) }
     var cloudKey by remember { mutableStateOf(initial.cloudApiKey) }
     var message by remember { mutableStateOf("") }
+    var testBusy by remember { mutableStateOf(false) }
+    val settingsScope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("AUTHORISED LAB SCOPE", color = Green, fontWeight = FontWeight.Bold)
@@ -774,29 +781,61 @@ private fun SettingsPage(repository: CybxRepository, onSaved: () -> Unit) {
         if (provider == "ollama") {
             OutlinedTextField(ollamaUrl, { ollamaUrl = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Ollama URL") })
             OutlinedTextField(ollamaModel, { ollamaModel = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Ollama model") })
-            Text("For Ollama on a PC, enter its private LAN address, e.g. http://192.168.1.5:11434. The app only allows HTTP to localhost/private LAN addresses. Choose a model that supports tool/function calling for AI Agent actions.", color = Muted, fontSize = 10.sp)
+            Text("For Ollama on a PC, enter its private LAN address, e.g. http://192.168.1.5:11434. The app only allows HTTP to localhost/private LAN addresses. Choose a model that supports tool/function calling.", color = Muted, fontSize = 10.sp)
         } else {
-            OutlinedTextField(cloudUrl, { cloudUrl = it }, modifier = Modifier.fillMaxWidth(), label = { Text("OpenAI-compatible HTTPS endpoint") })
+            OutlinedTextField(
+                cloudUrl, { cloudUrl = it }, modifier = Modifier.fillMaxWidth(),
+                label = { Text("HTTPS API endpoint") },
+                placeholder = { Text("https://ollama.com/api/chat") }
+            )
             OutlinedTextField(cloudModel, { cloudModel = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Cloud model") })
             OutlinedTextField(cloudKey, { cloudKey = it }, modifier = Modifier.fillMaxWidth(), label = { Text("API key") }, visualTransformation = PasswordVisualTransformation())
-            Text("The API key is encrypted with Android Keystore before it is stored locally. Cloud requests are HTTPS-only. AI Agent actions require a model with tool/function-calling support.", color = Muted, fontSize = 10.sp)
+            Text("Ollama Cloud: use https://ollama.com/api/chat with a model such as gemma4:31b. OpenAI-compatible providers use their /v1/chat/completions endpoint. API key is encrypted locally. Tool calling must be supported by the selected model.", color = Muted, fontSize = 10.sp)
         }
         Button(onClick = {
             try {
                 scopes = LabScope.validateScopeText(scopes)
                 repository.saveScope(scopes)
                 repository.saveAiConfig(AiConfig(provider, ollamaUrl.trim(), ollamaModel.trim(), cloudUrl.trim(), cloudModel.trim(), cloudKey.trim()))
-                message = "Settings saved. Lab scope and AI provider updated."
+                message = "Settings saved. Lab scope and AI provider settings updated."
                 onSaved()
             } catch (e: Exception) {
                 message = e.message ?: "Settings could not be saved."
             }
         }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Save, null); Spacer(Modifier.width(6.dp)); Text("Save settings") }
-        if (message.isNotBlank()) Text(message, color = Amber, fontSize = 11.sp)
+
+        OutlinedButton(
+            onClick = {
+                if (!testBusy) {
+                    settingsScope.launch {
+                        testBusy = true
+                        message = "Testing AI connection…"
+                        try {
+                            val config = AiConfig(provider, ollamaUrl.trim(), ollamaModel.trim(), cloudUrl.trim(), cloudModel.trim(), cloudKey.trim())
+                            message = aiClient.testConnection(config)
+                            repository.audit("AI connection test succeeded", "provider=$provider; model=" + (if (provider == "ollama") ollamaModel else cloudModel))
+                        } catch (e: Exception) {
+                            message = e.message ?: "AI connection test failed."
+                            repository.audit("AI connection test failed", message)
+                        } finally {
+                            testBusy = false
+                        }
+                    }
+                }
+            },
+            enabled = !testBusy,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (testBusy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            else Icon(Icons.Default.WifiTethering, null)
+            Spacer(Modifier.width(6.dp))
+            Text(if (testBusy) "Testing connection…" else "Test AI connection")
+        }
+        if (message.isNotBlank()) Text(message, color = if (message.contains("successful", true)) Green else Amber, fontSize = 11.sp)
         Divider(color = Color(0xFF294133))
         Text("PLATFORM LIMITATIONS", color = Amber, fontWeight = FontWeight.Bold)
         Text("CybX is a rootless Android userspace, not a bootable OS. USB Wi-Fi monitor mode, packet injection, HID and kernel-level features require compatible rooted/device kernels and are not promised on stock Xiaomi firmware.", color = Muted, fontSize = 11.sp)
-        Text("AI model output is advisory. It never becomes a shell command. Only the built-in bounded private-lab TCP scan task can be run by the Agent.", color = Muted, fontSize = 11.sp)
+        Text("AI model output is advisory. It never becomes a shell command. Only registered CybX tools can perform app actions, and sensitive actions require approval.", color = Muted, fontSize = 11.sp)
     }
 }
 
