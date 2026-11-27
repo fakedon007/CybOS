@@ -55,14 +55,16 @@ jobs:
           cp "$ROOT/app/src/main/java/com/cybx/os/runtime/CybxPRootRunner.kt" app/src/main/java/com/cybx/os/runtime/CybxPRootRunner.kt
           cp "$ROOT/app/src/main/java/com/cybx/os/runtime/ProotAdapter.kt" app/src/main/java/com/cybx/os/runtime/ProotAdapter.kt
           rm -f app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
-          grep -q 'versionCode = 13' app/build.gradle.kts
-          grep -q 'versionName = "0.5.0"' app/build.gradle.kts
+          grep -q 'versionCode = 14' app/build.gradle.kts
+          grep -q 'versionName = "0.6.0"' app/build.gradle.kts
           grep -q 'concurrent-futures:1.2.0' app/build.gradle.kts
           grep -q 'listenablefuture:1.0' app/build.gradle.kts
           ! grep -q 'terminal-view' app/build.gradle.kts
           ! grep -R 'com.termux.view.TerminalView\|CybxTerminalHost' app/src/main/java/com/cybx/os/MainActivity.kt app/src/main/java/com/cybx/os/runtime || true
           grep -q 'isRfc1918' app/src/main/java/com/cybx/os/agent/LabScope.kt
           grep -q 'ProcessBuilder' app/src/main/java/com/cybx/os/runtime/CybxShell.kt
+          test -f app/src/main/java/com/cybx/os/runtime/CybxPRootRunner.kt
+          grep -q 'agentResponse' app/src/main/java/com/cybx/os/ai/CybxAiClient.kt
           echo "CybX 0.5.0 sources staged."
 
       - name: Set up JDK 17
