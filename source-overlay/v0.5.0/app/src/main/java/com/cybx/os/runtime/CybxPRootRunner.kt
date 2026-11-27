@@ -33,7 +33,7 @@ class CybxPRootRunner(
             "--link2symlink", "-0",
             "-r", paths.rootfs.absolutePath,
             "-b", "/dev", "-b", "/proc", "-b", "/sys",
-            "-b", "\${paths.sharedMemory.absolutePath}:/dev/shm",
+            "-b", "${paths.sharedMemory.absolutePath}:/dev/shm",
             "-w", "/root",
             "/usr/bin/env", "-i",
             "HOME=/root", "USER=root", "LOGNAME=root", "SHELL=/bin/bash",
@@ -71,7 +71,7 @@ class CybxPRootRunner(
                 error("Kali command timed out after $timeoutSeconds seconds.")
             }
             val output = outputFuture.get(3, TimeUnit.SECONDS)
-            "Exit code: \${process.exitValue()}\n\${output.ifBlank { "(no output)" }}"
+            "Exit code: ${process.exitValue()}\n${output.ifBlank { "(no output)" }}"
         } finally {
             if (process.isAlive) process.destroyForcibly()
         }
