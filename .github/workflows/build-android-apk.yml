@@ -1,4 +1,4 @@
-name: Build CybX Mobile APK
+name: Build CybX Mobile AI APK
 
 on:
   workflow_dispatch:
@@ -7,8 +7,7 @@ on:
     paths:
       - ".github/workflows/build-android-apk.yml"
       - "app-source-v0.4.1.zip"
-      - "source-overlay/v0.4.3/app/build.gradle.kts"
-      - "source-overlay/v0.4.3/app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt"
+      - "source-overlay/v0.5.0/**"
 
 permissions:
   contents: read
@@ -20,7 +19,7 @@ jobs:
       - name: Checkout CybX source
         uses: actions/checkout@v4
 
-      - name: Restore CybX v0.4.1 project source
+      - name: Restore known ARM64 PRoot and safe rootfs installer base
         shell: bash
         run: |
           set -euxo pipefail
@@ -30,33 +29,40 @@ jobs:
           APP_GRADLE="$(find "$RUNNER_TEMP/cybx-source" -type f -path '*/app/build.gradle.kts' -print -quit)"
           test -n "$APP_GRADLE"
           PROJECT_ROOT="${APP_GRADLE%/app/build.gradle.kts}"
-          echo "Using source root: $PROJECT_ROOT"
           cp -a "$PROJECT_ROOT/." "$GITHUB_WORKSPACE/"
-          test -f app/build.gradle.kts
-          test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/java/com/cybx/os/MainActivity.kt
-          test -f app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
-          echo "CybX source restored successfully."
+          test -s app/src/main/jniLibs/arm64-v8a/libproot.so
+          test -f app/src/main/java/com/cybx/os/runtime/CybxPaths.kt
+          test -f app/src/main/java/com/cybx/os/runtime/LocalRuntimeInstaller.kt
+          echo "CybX base source restored."
 
-      - name: Apply CybX 0.4.3 terminal startup guard and dependency fixes
+      - name: Apply CybX Mobile AI 0.5.0 implementation
         shell: bash
         run: |
-          set -euo pipefail
-          test -f source-overlay/v0.4.3/app/build.gradle.kts
-          test -f source-overlay/v0.4.3/app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
-          cp source-overlay/v0.4.3/app/build.gradle.kts app/build.gradle.kts
-          cp source-overlay/v0.4.3/app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
-          grep -q 'androidx.concurrent:concurrent-futures:1.2.0' app/build.gradle.kts
-          grep -q 'com.google.guava:listenablefuture:1.0' app/build.gradle.kts
-          ! grep -q '9999.0-empty-to-avoid-conflict-with-guava' app/build.gradle.kts
-          grep -q 'versionCode = 12' app/build.gradle.kts
-          grep -q 'versionName = "0.4.3"' app/build.gradle.kts
-          grep -q 'OnGlobalLayoutListener' app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
-          grep -q 'attachMeasuredView' app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
-          grep -q 'CybX-Terminal' app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
-          grep -q 'painterResource(R.drawable.ic_launcher_foreground)' app/src/main/java/com/cybx/os/MainActivity.kt
-          ! grep -q 'painterResource(R.mipmap.ic_launcher)' app/src/main/java/com/cybx/os/MainActivity.kt
-          echo "CybX 0.4.3 terminal startup guard and dependency fixes validated."
+          set -euxo pipefail
+          ROOT="source-overlay/v0.5.0"
+          test -f "$ROOT/app/build.gradle.kts"
+          test -f "$ROOT/app/src/main/AndroidManifest.xml"
+          cp "$ROOT/app/build.gradle.kts" app/build.gradle.kts
+          cp "$ROOT/app/src/main/AndroidManifest.xml" app/src/main/AndroidManifest.xml
+          cp "$ROOT/app/src/main/java/com/cybx/os/MainActivity.kt" app/src/main/java/com/cybx/os/MainActivity.kt
+          mkdir -p app/src/main/java/com/cybx/os/agent
+          mkdir -p app/src/main/java/com/cybx/os/ai
+          mkdir -p app/src/main/java/com/cybx/os/reports
+          cp "$ROOT/app/src/main/java/com/cybx/os/agent/"*.kt app/src/main/java/com/cybx/os/agent/
+          cp "$ROOT/app/src/main/java/com/cybx/os/ai/"*.kt app/src/main/java/com/cybx/os/ai/
+          cp "$ROOT/app/src/main/java/com/cybx/os/reports/"*.kt app/src/main/java/com/cybx/os/reports/
+          cp "$ROOT/app/src/main/java/com/cybx/os/runtime/CybxShell.kt" app/src/main/java/com/cybx/os/runtime/CybxShell.kt
+          cp "$ROOT/app/src/main/java/com/cybx/os/runtime/ProotAdapter.kt" app/src/main/java/com/cybx/os/runtime/ProotAdapter.kt
+          rm -f app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
+          grep -q 'versionCode = 13' app/build.gradle.kts
+          grep -q 'versionName = "0.5.0"' app/build.gradle.kts
+          grep -q 'concurrent-futures:1.2.0' app/build.gradle.kts
+          grep -q 'listenablefuture:1.0' app/build.gradle.kts
+          ! grep -q 'terminal-view' app/build.gradle.kts
+          ! grep -R 'com.termux.view.TerminalView\|CybxTerminalHost' app/src/main/java/com/cybx/os/MainActivity.kt app/src/main/java/com/cybx/os/runtime || true
+          grep -q 'isRfc1918' app/src/main/java/com/cybx/os/agent/LabScope.kt
+          grep -q 'ProcessBuilder' app/src/main/java/com/cybx/os/runtime/CybxShell.kt
+          echo "CybX 0.5.0 sources staged."
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -103,7 +109,7 @@ jobs:
             echo "CYBX_STABLE_SIGNING=true" >> "$GITHUB_ENV"
           else
             echo "CYBX_STABLE_SIGNING=false" >> "$GITHUB_ENV"
-            echo "::warning::Stable signing secrets are not configured. A temporary debug-signed APK will be produced; it may not install as an in-place update from an APK signed with another key."
+            echo "::warning::No persistent release key is configured. This is a debug-signed test APK and may not update over an APK with a different signing key."
           fi
 
       - name: Build APK and verify package signature
@@ -113,18 +119,18 @@ jobs:
           mkdir -p dist
           if [ "$CYBX_STABLE_SIGNING" = "true" ]; then
             gradle --no-daemon :app:assembleRelease
-            cp app/build/outputs/apk/release/app-release.apk dist/CybX-OS-v0.4.3-release.apk
+            cp app/build/outputs/apk/release/app-release.apk dist/CybX-Mobile-AI-v0.5.0-release.apk
           else
             gradle --no-daemon :app:assembleDebug
-            cp app/build/outputs/apk/debug/app-debug.apk dist/CybX-OS-v0.4.3-debug.apk
+            cp app/build/outputs/apk/debug/app-debug.apk dist/CybX-Mobile-AI-v0.5.0-debug.apk
           fi
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/*.apk
           sha256sum dist/*.apk > dist/SHA256SUMS.txt
 
-      - name: Upload CybX APK
+      - name: Upload APK and checksum
         uses: actions/upload-artifact@v4
         with:
-          name: CybX-OS-v0.4.3-APK
+          name: CybX-Mobile-AI-v0.5.0-APK
           path: dist/*
           if-no-files-found: error
           retention-days: 90
