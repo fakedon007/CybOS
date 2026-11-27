@@ -260,8 +260,8 @@ private fun CybXApp() {
                             }
                         },
                         onRun = {
-                            val approved = plan ?: return@AgentPage
-                            scope.launch {
+                            val approved = plan
+                            if (approved != null) scope.launch {
                                 agentBusy = true
                                 agentError = null
                                 currentRecord = null
