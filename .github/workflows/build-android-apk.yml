@@ -1,48 +1,36 @@
-name: Build CybX Android APK
+name: Build CybX Mobile APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
     paths:
-      - "source-overlay/v0.4.0/READY"
-      - "app-source-v0.4.0.zip"
+      - ".github/workflows/build-android-apk.yml"
+      - "app-source-v0.3.3.zip"
+      - "cybx-v0.4.0.patch"
 
 permissions:
   contents: read
 
 jobs:
-  build-android-apk:
+  build-android:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source
+      - name: Checkout CybX source
         uses: actions/checkout@v4
 
-      - name: Restore CybX Android project
+      - name: Restore v0.3.3 source and apply tested v0.4.0 patch
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f source-overlay/v0.4.0/READY ]; then
-            test -f app-source-v0.3.3.zip
-            unzip -oq app-source-v0.3.3.zip -d .
-            cp -a source-overlay/v0.4.0/app/. app/
-            cp source-overlay/v0.4.0/settings.gradle.kts settings.gradle.kts
-            echo "CYBX_VERSION=0.4.0" >> "$GITHUB_ENV"
-            test -f app/src/main/java/com/cybx/os/runtime/CybxTerminalController.kt
-            test -f app/src/main/res/drawable/ic_launcher_foreground.xml
-          elif [ -f app-source-v0.4.0.zip ]; then
-            unzip -oq app-source-v0.4.0.zip -d .
-            echo "CYBX_VERSION=0.4.0" >> "$GITHUB_ENV"
-          elif [ -f app-source-v0.3.3.zip ]; then
-            unzip -oq app-source-v0.3.3.zip -d .
-            echo "CYBX_VERSION=0.3.3" >> "$GITHUB_ENV"
-          else
-            echo "::error::No supported CybX source archive found."
-            exit 1
-          fi
-          test -f app/build.gradle.kts
-          test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/jniLibs/arm64-v8a/libproot.so
+          test -f app-source-v0.3.3.zip
+          test -f cybx-v0.4.0.patch
+          unzip -oq app-source-v0.3.3.zip -d .
+          patch --batch --forward -p1 < cybx-v0.4.0.patch
+          test -f app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
+          test -f app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          grep -q 'versionName = "0.4.0"' app/build.gradle.kts
+          grep -q '96aeced81a857a987715a14417af05c2934e3e19052d6151c398a1c215448b60' app/src/main/java/com/cybx/os/runtime/LocalRuntimeInstaller.kt
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -82,34 +70,35 @@ jobs:
             KEYSTORE_PATH="$RUNNER_TEMP/cybx-release.jks"
             printf '%s' "$CYBX_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
             test -s "$KEYSTORE_PATH"
-            echo "CYBX_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+            echo "CYBX_KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
             echo "CYBX_KEYSTORE_PASSWORD=$CYBX_KEYSTORE_PASSWORD_SECRET" >> "$GITHUB_ENV"
             echo "CYBX_KEY_ALIAS=$CYBX_KEY_ALIAS_SECRET" >> "$GITHUB_ENV"
             echo "CYBX_KEY_PASSWORD=$CYBX_KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
             echo "CYBX_STABLE_SIGNING=true" >> "$GITHUB_ENV"
           else
             echo "CYBX_STABLE_SIGNING=false" >> "$GITHUB_ENV"
-            echo "::warning::Stable signing secrets are missing. This build will use a temporary debug key."
+            echo "::warning::Stable signing secrets are not configured. A temporary debug-signed APK will be produced; it will not be compatible as an in-place update from earlier signing keys."
           fi
 
-      - name: Build APK
+      - name: Build APK and verify package signature
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
           if [ "$CYBX_STABLE_SIGNING" = "true" ]; then
             gradle --no-daemon :app:assembleRelease
-            cp app/build/outputs/apk/release/app-release.apk "dist/CybX-OS-v${CYBX_VERSION}.apk"
+            cp app/build/outputs/apk/release/app-release.apk dist/CybX-OS-v0.4.0-release.apk
           else
             gradle --no-daemon :app:assembleDebug
-            cp app/build/outputs/apk/debug/app-debug.apk "dist/CybX-OS-v${CYBX_VERSION}.apk"
+            cp app/build/outputs/apk/debug/app-debug.apk dist/CybX-OS-v0.4.0-debug.apk
           fi
-          sha256sum "dist/CybX-OS-v${CYBX_VERSION}.apk" | tee dist/SHA256SUMS.txt
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "dist/CybX-OS-v${CYBX_VERSION}.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/*.apk
+          sha256sum dist/*.apk > dist/SHA256SUMS.txt
 
-      - name: Upload APK
+      - name: Upload CybX APK
         uses: actions/upload-artifact@v4
         with:
-          name: CybX-OS-v${{ env.CYBX_VERSION }}-APK
+          name: CybX-OS-v0.4.0-APK
           path: dist/*
           if-no-files-found: error
+          retention-days: 90
