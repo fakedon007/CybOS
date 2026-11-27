@@ -26,7 +26,108 @@ data class AiConfig(
     val cloudApiKey: String = ""
 )
 
+
+data class CybxModelToolCall(
+    val id: String,
+    val name: String,
+    val arguments: JSONObject
+)
+
+data class CybxModelTurn(
+    val content: String,
+    val toolCall: CybxModelToolCall?,
+    val protocolMessage: JSONObject
+)
+
 class CybxAiClient {
+
+    /**
+     * Makes one tool-aware assistant turn using Ollama /api/chat or an OpenAI-compatible
+     * chat-completions endpoint. The app executes returned tools locally after policy checks.
+     */
+    suspend fun agentResponse(messages: List<JSONObject>, config: AiConfig): CybxModelTurn =
+        withContext(Dispatchers.IO) {
+            val useOllama = config.provider == "ollama"
+            val endpoint = if (useOllama) config.ollamaUrl.trimEnd('/') + "/api/chat" else config.cloudUrl.trim()
+            if (useOllama) {
+                require(isAllowedOllamaUrl(endpoint)) {
+                    "Ollama HTTP endpoint must be localhost or a private LAN address. Use HTTPS for public endpoints."
+                }
+            } else {
+                require(endpoint.startsWith("https://", ignoreCase = true)) { "Cloud AI endpoint must use HTTPS." }
+                require(config.cloudApiKey.isNotBlank()) { "Cloud AI API key is not configured." }
+            }
+            val model = if (useOllama) config.ollamaModel else config.cloudModel
+            require(model.isNotBlank()) { "AI model name is empty." }
+
+            val body = JSONObject()
+                .put("model", model)
+                .put("messages", JSONArray(messages))
+                .put("tools", com.cybx.os.agent.CybxAgentToolRegistry.definitions())
+                .put("stream", false)
+            if (useOllama) {
+                body.put("options", JSONObject().put("temperature", 0.15))
+            } else {
+                body.put("tool_choice", "auto")
+                    .put("parallel_tool_calls", false)
+                    .put("temperature", 0.15)
+            }
+
+            val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 12_000
+                readTimeout = 90_000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                if (!useOllama) setRequestProperty("Authorization", "Bearer " + config.cloudApiKey)
+            }
+            try {
+                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                val code = connection.responseCode
+                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+                val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code !in 200..299) error("AI provider HTTP " + code + ": " + response.take(500))
+                val root = JSONObject(response)
+                val message = if (useOllama) {
+                    root.optJSONObject("message")
+                } else {
+                    root.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
+                } ?: error("AI provider returned no assistant message.")
+
+                val calls = message.optJSONArray("tool_calls")
+                val firstCall = calls?.optJSONObject(0)
+                val toolCall = if (firstCall == null) null else {
+                    val function = firstCall.optJSONObject("function") ?: JSONObject()
+                    val name = function.optString("name").trim()
+                    require(name.isNotEmpty()) { "AI returned a tool call without a function name." }
+                    val rawArgs = function.opt("arguments")
+                    val args = when (rawArgs) {
+                        is JSONObject -> rawArgs
+                        is String -> runCatching { JSONObject(rawArgs) }.getOrElse { JSONObject() }
+                        else -> JSONObject()
+                    }
+                    CybxModelToolCall(
+                        id = firstCall.optString("id").ifBlank { "cybx_call_" + java.util.UUID.randomUUID().toString() },
+                        name = name,
+                        arguments = args
+                    )
+                }
+
+                // This phase deliberately serializes one tool call at a time.
+                val protocolMessage = JSONObject(message.toString())
+                if (toolCall != null && calls != null && calls.length() > 1) {
+                    protocolMessage.put("tool_calls", JSONArray().put(firstCall))
+                }
+                CybxModelTurn(
+                    content = message.optString("content").trim().take(6000),
+                    toolCall = toolCall,
+                    protocolMessage = protocolMessage
+                )
+            } finally {
+                connection.disconnect()
+            }
+        }
+
     suspend fun explainTask(request: String, target: String, config: AiConfig): String? =
         ask(
             config,
