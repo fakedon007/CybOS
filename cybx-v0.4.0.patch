@@ -174,7 +174,7 @@ index 63fb439ccdde736a2ca9b326250804f951f29896..60f2d6b299bcfa3cd3d1e4f4c9579624
          android:supportsRtl="true"
          android:usesCleartextTraffic="false">
 diff --git a/app/src/main/java/com/cybx/os/MainActivity.kt b/app/src/main/java/com/cybx/os/MainActivity.kt
-index a7f99e7015e68c6e25aed47106416ff292b38dd3..392a5c1189fd858899f2f91041b7d243a9c166d1 100644
+index a7f99e7015e68c6e25aed47106416ff292b38dd3..0ca8db1f1656aa3cf6972c0cfa469baa2391e21f 100644
 --- a/app/src/main/java/com/cybx/os/MainActivity.kt
 +++ b/app/src/main/java/com/cybx/os/MainActivity.kt
 @@ -6,7 +6,9 @@ import androidx.activity.ComponentActivity
@@ -518,7 +518,7 @@ index a7f99e7015e68c6e25aed47106416ff292b38dd3..392a5c1189fd858899f2f91041b7d243
 +        } else {
 +            AndroidView(
 +                modifier = Modifier.weight(1f).fillMaxWidth(),
-+                factory = { ctx -> TerminalView(ctx).apply { host.attach(this) } },
++                factory = { ctx -> TerminalView(ctx, null).apply { host.attach(this) } },
 +                update = { view -> host.attach(view) }
 +            )
 +            Row(
@@ -1065,6 +1065,67 @@ index 3f2affdb726cae269f1e31644c788a4f8d4ca417..aacccd0e56dc499a0dc4b92ebb43622d
 -
 -    fun startInteractiveShell(): Process = processBuilder(buildInteractiveShellCommand()).start()
  }
+diff --git a/app/src/main/java/com/cybx/os/runtime/RuntimeManager.kt b/app/src/main/java/com/cybx/os/runtime/RuntimeManager.kt
+index 9ca3e2778149944da75de0163552fb691624c5b3..42be0aaa5621a3f124a1ac288934f433782217bd 100644
+--- a/app/src/main/java/com/cybx/os/runtime/RuntimeManager.kt
++++ b/app/src/main/java/com/cybx/os/runtime/RuntimeManager.kt
+@@ -10,7 +10,7 @@ class RuntimeManager(context: Context) {
+     val paths = CybxPaths(context)
+     private val _progress = MutableStateFlow(RuntimeProgress())
+     val progress: StateFlow<RuntimeProgress> = _progress.asStateFlow()
+-    val proot = ProotAdapter(paths)
++    val proot = ProotAdapter(context, paths)
+ 
+     fun markError(message: String) {
+         _progress.value = RuntimeProgress(
+diff --git a/app/src/main/java/com/cybx/os/runtime/TerminalSession.kt b/app/src/main/java/com/cybx/os/runtime/TerminalSession.kt
+deleted file mode 100644
+index e9bb54d42f6579c1c107ac2bec6d3581a7d67d49..0000000000000000000000000000000000000000
+--- a/app/src/main/java/com/cybx/os/runtime/TerminalSession.kt
++++ /dev/null
+@@ -1,42 +0,0 @@
+-package com.cybx.os.runtime
+-
+-import kotlinx.coroutines.Dispatchers
+-import kotlinx.coroutines.withContext
+-import java.io.BufferedReader
+-import java.io.File
+-import java.io.InputStreamReader
+-
+-/**
+- * Command session adapter. This is a pipe-based shell, not a PTY:
+- * interactive full-screen apps, terminal resize and job control need a PTY backend.
+- */
+-class TerminalSession(private val paths: CybxPaths) {
+-    private var process: Process? = null
+-
+-    fun start(): Process {
+-        check(process == null || process?.isAlive == false) { "A terminal session is already running" }
+-        val proot = ProotAdapter(paths)
+-        val p = proot.startInteractiveShell()
+-        process = p
+-        return p
+-    }
+-
+-    suspend fun runOne(command: String, onLine: (String) -> Unit): Int =
+-        withContext(Dispatchers.IO) {
+-            require(command.length <= 4096) { "Command is too long" }
+-            require(!command.contains('\u0000')) { "Invalid command" }
+-            val p = ProcessBuilder(
+-                ProotAdapter(paths).buildShellCommand(command)
+-            ).directory(paths.base).redirectErrorStream(true).start()
+-            BufferedReader(InputStreamReader(p.inputStream)).useLines { lines ->
+-                lines.forEach(onLine)
+-            }
+-            p.waitFor()
+-        }
+-
+-    fun stop() {
+-        process?.destroy()
+-        if (process?.isAlive == true) process?.destroyForcibly()
+-        process = null
+-    }
+-}
 diff --git a/app/src/main/res/drawable/ic_launcher_foreground.xml b/app/src/main/res/drawable/ic_launcher_foreground.xml
 new file mode 100644
 index 0000000000000000000000000000000000000000..f405202f85074cf7936fef2b197b71ccc4dd9ba1
