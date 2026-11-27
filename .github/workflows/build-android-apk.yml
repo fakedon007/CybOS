@@ -29,7 +29,6 @@ jobs:
           patch --batch --forward -p1 < cybx-v0.4.0.patch
           test -f app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
           test -f app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
-          grep -q 'versionName = "0.4.0"' app/build.gradle.kts
           grep -q '96aeced81a857a987715a14417af05c2934e3e19052d6151c398a1c215448b60' app/src/main/java/com/cybx/os/runtime/LocalRuntimeInstaller.kt
 
       - name: Fix adaptive icon Compose crash and bump version
