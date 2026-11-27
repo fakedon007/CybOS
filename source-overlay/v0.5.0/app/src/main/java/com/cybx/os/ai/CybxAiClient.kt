@@ -115,8 +115,11 @@ class CybxAiClient {
 
                 // This phase deliberately serializes one tool call at a time.
                 val protocolMessage = JSONObject(message.toString())
-                if (toolCall != null && calls != null && calls.length() > 1) {
-                    protocolMessage.put("tool_calls", JSONArray().put(firstCall))
+                if (toolCall != null) {
+                    val protocolCalls = protocolMessage.optJSONArray("tool_calls")
+                    val protocolCall = protocolCalls?.optJSONObject(0)
+                    protocolCall?.put("id", toolCall.id)
+                    if (protocolCall != null) protocolMessage.put("tool_calls", JSONArray().put(protocolCall))
                 }
                 CybxModelTurn(
                     content = message.optString("content").trim().take(6000),
