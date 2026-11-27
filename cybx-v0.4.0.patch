@@ -1,3 +1,6 @@
+diff --git a/README_CYBX_0.4.0.md b/README_CYBX_0.4.0.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..661b4c8e918475d4a6f6a11f8d770e9182be1940
 --- /dev/null
 +++ b/README_CYBX_0.4.0.md
 @@ -0,0 +1,42 @@
@@ -43,7 +46,9 @@
 +
 +- PRoot portable Android ARM64 binary: packaged from the existing CybX runtime bundle with upstream provenance noted in that bundle.
 +- Termux `terminal-view` and `terminal-emulator` 0.118.0: Apache License 2.0. Upstream source: https://github.com/termux/termux-app
-
+diff --git a/SIGNING_AND_PLAY_PROTECT.md b/SIGNING_AND_PLAY_PROTECT.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b8b072ad1793fff87db4731c852719de3529c058
 --- /dev/null
 +++ b/SIGNING_AND_PLAY_PROTECT.md
 @@ -0,0 +1,35 @@
@@ -82,7 +87,9 @@
 +https://developers.google.com/android/play-protect/warning-dev-guidance
 +
 +Do not disable or bypass Play Protect. A stable signature helps users identify consistent updates; it does not by itself make an app Play Protect-approved.
-
+diff --git a/THIRD_PARTY_NOTICES.md b/THIRD_PARTY_NOTICES.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6c71e4f8627d858bc5c30996f4e1e385e534ed18
 --- /dev/null
 +++ b/THIRD_PARTY_NOTICES.md
 @@ -0,0 +1,11 @@
@@ -97,10 +104,11 @@
 +- License notice: https://github.com/termux/termux-app/blob/master/LICENSE.md
 +
 +The Termux application's main app and other modules have separate license terms; CybX depends on only the terminal-view and terminal-emulator libraries. Review the upstream version's license notices before redistributing a modified copy.
-
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index f1fc6544f1e15f549015b6a83692ba86c9c2beb1..22782f839801539d418a653ccbeec451cd387b47 100644
 --- a/app/build.gradle.kts
 +++ b/app/build.gradle.kts
-@@ -11,10 +11,10 @@
+@@ -11,10 +11,10 @@ android {
      defaultConfig {
          applicationId = "com.cybx.os"
          minSdk = 26
@@ -114,12 +122,10 @@
      }
  
      buildFeatures { compose = true }
-@@ -22,6 +22,28 @@
-         jniLibs {
-             useLegacyPackaging = true
+@@ -24,6 +24,28 @@ android {
              keepDebugSymbols += "**/libproot.so"
-+        }
-+    }
+         }
+     }
 +
 +    signingConfigs {
 +        create("cybxRelease") {
@@ -140,10 +146,12 @@
 +            if (!keyStorePath.isNullOrBlank()) {
 +                signingConfig = signingConfigs.getByName("cybxRelease")
 +            }
-         }
-     }
++        }
++    }
      compileOptions {
-@@ -44,5 +66,8 @@
+         sourceCompatibility = JavaVersion.VERSION_17
+         targetCompatibility = JavaVersion.VERSION_17
+@@ -44,5 +66,8 @@ dependencies {
      implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
      implementation("org.apache.commons:commons-compress:1.27.1")
      implementation("org.tukaani:xz:1.10")
@@ -152,7 +160,8 @@
 +    implementation("com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava")
      debugImplementation("androidx.compose.ui:ui-tooling")
  }
-
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index 63fb439ccdde736a2ca9b326250804f951f29896..60f2d6b299bcfa3cd3d1e4f4c9579624a5a7067c 100644
 --- a/app/src/main/AndroidManifest.xml
 +++ b/app/src/main/AndroidManifest.xml
 @@ -4,6 +4,8 @@
@@ -164,10 +173,11 @@
          android:theme="@android:style/Theme.Material.NoActionBar"
          android:supportsRtl="true"
          android:usesCleartextTraffic="false">
-
+diff --git a/app/src/main/java/com/cybx/os/MainActivity.kt b/app/src/main/java/com/cybx/os/MainActivity.kt
+index a7f99e7015e68c6e25aed47106416ff292b38dd3..392a5c1189fd858899f2f91041b7d243a9c166d1 100644
 --- a/app/src/main/java/com/cybx/os/MainActivity.kt
 +++ b/app/src/main/java/com/cybx/os/MainActivity.kt
-@@ -6,7 +6,9 @@
+@@ -6,7 +6,9 @@ import androidx.activity.ComponentActivity
  import androidx.activity.compose.setContent
  import androidx.activity.compose.rememberLauncherForActivityResult
  import androidx.activity.result.contract.ActivityResultContracts
@@ -177,7 +187,7 @@
  import androidx.compose.foundation.layout.*
  import androidx.compose.foundation.lazy.LazyColumn
  import androidx.compose.foundation.lazy.items
-@@ -20,18 +22,21 @@
+@@ -20,18 +22,21 @@ import androidx.compose.runtime.*
  import androidx.compose.ui.Alignment
  import androidx.compose.ui.Modifier
  import androidx.compose.ui.graphics.Color
@@ -201,7 +211,7 @@
  
  private val Bg = Color(0xFF080D0B)
  private val Panel = Color(0xFF111A16)
-@@ -56,32 +61,44 @@
+@@ -56,33 +61,45 @@ fun CybXApp() {
      val context = androidx.compose.ui.platform.LocalContext.current
      val paths = remember { CybxPaths(context) }
      val installer = remember { LocalRuntimeInstaller(context) }
@@ -246,23 +256,22 @@
                  refresh++
 -            } catch (e: Exception) { statusMessage = e.message ?: "Rootfs import failed" }
 -            finally { busy = false }
--        }
--    }
--
--    val prootAvailable = remember(refresh) { ProotAdapter(paths).isAvailable() }
--    val rootfsAvailable = remember(refresh) { paths.rootfs.resolve("etc/os-release").isFile }
--    val runtimeReady = prootAvailable && rootfsAvailable
 +            } catch (e: Exception) {
 +                statusMessage = e.message ?: "Rootfs import failed"
 +            } finally {
 +                busy = false
 +            }
-+        }
-+    }
+         }
+     }
  
+-    val prootAvailable = remember(refresh) { ProotAdapter(paths).isAvailable() }
+-    val rootfsAvailable = remember(refresh) { paths.rootfs.resolve("etc/os-release").isFile }
+-    val runtimeReady = prootAvailable && rootfsAvailable
+-
      MaterialTheme(colorScheme = darkColorScheme(
          primary = Green, background = Bg, surface = Panel,
-@@ -91,9 +108,16 @@
+         onBackground = Color.White, onSurface = Color.White,
+@@ -91,9 +108,16 @@ fun CybXApp() {
          Scaffold(
              containerColor = Bg,
              topBar = {
@@ -282,7 +291,7 @@
                  }
              },
              bottomBar = {
-@@ -101,15 +125,18 @@
+@@ -101,15 +125,18 @@ fun CybXApp() {
                      val entries = listOf(Page.DASHBOARD, Page.INSTALL, Page.TERMINAL, Page.TOOLS, Page.FILES, Page.SETTINGS)
                      entries.forEach { item ->
                          NavigationBarItem(
@@ -310,7 +319,7 @@
                              label = { Text(item.title, fontSize = 9.sp) },
                              colors = NavigationBarItemDefaults.colors(selectedIconColor = Green, selectedTextColor = Green)
                          )
-@@ -119,38 +146,25 @@
+@@ -119,38 +146,25 @@ fun CybXApp() {
          ) { padding ->
              Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp, vertical = 12.dp)) {
                  when (page) {
@@ -365,7 +374,7 @@
                      )
                      Page.TOOLS -> ToolsPage(runtimeReady)
                      Page.FILES -> FilesPage(paths.rootfs, runtimeReady)
-@@ -162,16 +176,29 @@
+@@ -162,16 +176,29 @@ fun CybXApp() {
  }
  
  @Composable
@@ -401,7 +410,7 @@
                      Spacer(Modifier.height(18.dp))
                      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                          Button(onClick = onSetup, modifier = Modifier.weight(1f)) { Text("Linux Setup") }
-@@ -182,8 +209,8 @@
+@@ -182,8 +209,8 @@ private fun DashboardPage(ready: Boolean, proot: Boolean, rootfs: Boolean, statu
          }
          item {
              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -412,7 +421,7 @@
              }
          }
          item {
-@@ -192,6 +219,7 @@
+@@ -192,6 +219,7 @@ private fun DashboardPage(ready: Boolean, proot: Boolean, rootfs: Boolean, statu
                      Text("SYSTEM STATUS", color = Green, fontWeight = FontWeight.Bold)
                      StatusLine("Android app", "READY")
                      StatusLine("Rootless runtime", if (ready) "READY" else "NOT CONFIGURED")
@@ -420,7 +429,7 @@
                      StatusLine("Kernel", "Android host kernel")
                      Text(status, color = Muted, fontSize = 11.sp)
                  }
-@@ -227,57 +255,104 @@
+@@ -227,57 +255,104 @@ private fun StatusLine(label: String, value: String) {
  }
  
  @Composable
@@ -472,40 +481,33 @@
          if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
          Text(status, color = Muted, fontSize = 12.sp)
 -        Text("Security note: the bundled PRoot binary is an Android ARM64 build. The rootfs SHA-256 is verified before extraction. The checksum validates bytes, not publisher identity.", color = Amber, fontSize = 11.sp)
--    }
--}
--
--@Composable
--private fun TerminalPage(ready: Boolean, text: String, command: String, onCommand: (String) -> Unit,
--                         onRun: () -> Unit, busy: Boolean) {
 +        Text(
 +            "Only the pinned Kali NetHunter Minimal ARM64 archive is accepted. The checksum verifies the file bytes against the pinned release; it does not authenticate any unrelated file or publisher outside that release.",
 +            color = Amber, fontSize = 11.sp
 +        )
-+    }
-+}
-+
-+@Composable
+     }
+ }
+ 
+ @Composable
+-private fun TerminalPage(ready: Boolean, text: String, command: String, onCommand: (String) -> Unit,
+-                         onRun: () -> Unit, busy: Boolean) {
 +private fun TerminalPage(ready: Boolean, problem: String?, host: CybxTerminalHost) {
      Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
 -        Text(if (ready) "LINUX COMMAND RUNNER · PRoot" else "LINUX RUNTIME NOT READY", color = if (ready) Green else Amber, fontSize = 11.sp, fontWeight = FontWeight.Bold)
 -        Card(Modifier.weight(1f).fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF030705))) {
 -            Text(text, Modifier.fillMaxSize().padding(12.dp).verticalScroll(rememberScrollState()),
 -                color = Green, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
--        }
--        OutlinedTextField(value = command, onValueChange = onCommand, modifier = Modifier.fillMaxWidth(),
--            enabled = ready && !busy, singleLine = true, label = { Text("Linux command") })
--        Button(onClick = onRun, enabled = ready && !busy && command.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
--            Text(if (busy) "Running…" else "Execute command")
--        }
--        Text("Commands run inside the installed rootfs. This first terminal is command-per-process, not a persistent PTY shell.", color = Muted, fontSize = 10.sp)
 +        Row(verticalAlignment = Alignment.CenterVertically) {
 +            Column(Modifier.weight(1f)) {
 +                Text(if (ready) "KALI LINUX · INTERACTIVE PTY" else "LINUX RUNTIME NOT READY", color = if (ready) Green else Amber, fontSize = 11.sp, fontWeight = FontWeight.Bold)
 +                Text("Bash · ANSI colours · terminal resize · persistent session", color = Muted, fontSize = 10.sp)
 +            }
 +            TextButton(onClick = { host.restart() }, enabled = ready) { Text("Restart") }
-+        }
+         }
+-        OutlinedTextField(value = command, onValueChange = onCommand, modifier = Modifier.fillMaxWidth(),
+-            enabled = ready && !busy, singleLine = true, label = { Text("Linux command") })
+-        Button(onClick = onRun, enabled = ready && !busy && command.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+-            Text(if (busy) "Running…" else "Execute command")
 +        if (!ready) {
 +            Card(Modifier.weight(1f).fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Panel)) {
 +                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -532,7 +534,8 @@
 +                TerminalKey("←") { host.send("\u001B[D") }
 +                TerminalKey("→") { host.send("\u001B[C") }
 +            }
-+        }
+         }
+-        Text("Commands run inside the installed rootfs. This first terminal is command-per-process, not a persistent PTY shell.", color = Muted, fontSize = 10.sp)
 +    }
 +}
 +
@@ -559,7 +562,7 @@
      LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
          item { Text(if (runtimeReady) "TOOLS · INSTALL WITH APT" else "TOOLS CATALOG · RUNTIME REQUIRED", color = Muted, fontSize = 11.sp) }
          items(tools) { (name, description) ->
-@@ -296,12 +371,16 @@
+@@ -296,12 +371,16 @@ private fun ToolsPage(runtimeReady: Boolean) {
  }
  
  @Composable
@@ -580,7 +583,7 @@
          Text(current, color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
          if (current != "/") OutlinedButton(onClick = { current = current.substringBeforeLast('/').ifBlank { "/" } }) { Text(".. Parent") }
          if (!ready) Text("Install the Linux rootfs to browse its files.", color = Muted)
-@@ -312,7 +391,9 @@
+@@ -312,7 +391,9 @@ private fun FilesPage(rootfs: java.io.File, ready: Boolean) {
                          Icon(if (file.isDirectory) Icons.Default.Folder else Icons.Default.InsertDriveFile, null, tint = Green)
                          Spacer(Modifier.width(10.dp))
                          Text(file.name, color = Color.White, modifier = Modifier.weight(1f))
@@ -591,7 +594,7 @@
                      }
                  }
              }
-@@ -323,9 +404,10 @@
+@@ -323,9 +404,10 @@ private fun FilesPage(rootfs: java.io.File, ready: Boolean) {
  @Composable
  private fun SettingsPage(status: String) {
      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -603,10 +606,11 @@
          Text("Runtime status: $status", color = Muted, fontSize = 12.sp)
          Text("CybX Virtual custom-kernel VM will be added after the Android app is stable.", color = Amber, fontSize = 12.sp)
      }
-
+diff --git a/app/src/main/java/com/cybx/os/runtime/CybxPaths.kt b/app/src/main/java/com/cybx/os/runtime/CybxPaths.kt
+index 7427fa16d2755fb02f9c1601201868865ac3c03d..0cec62a7835e1230ca063d64c4794b587efbddd0 100644
 --- a/app/src/main/java/com/cybx/os/runtime/CybxPaths.kt
 +++ b/app/src/main/java/com/cybx/os/runtime/CybxPaths.kt
-@@ -4,15 +4,31 @@
+@@ -4,15 +4,31 @@ import android.content.Context
  import java.io.File
  
  class CybxPaths(context: Context) {
@@ -645,7 +649,9 @@
 +
 +    fun isRuntimeReady(): Boolean = prootExecutable.isFile && prootExecutable.canExecute() && rootfsProblem() == null
  }
-
+diff --git a/app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt b/app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..6a2843297c56fd1bfb267017ec4917cd9d1e8501
 --- /dev/null
 +++ b/app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
 @@ -0,0 +1,132 @@
@@ -781,10 +787,11 @@
 +        terminalView = null
 +    }
 +}
-
+diff --git a/app/src/main/java/com/cybx/os/runtime/LocalRuntimeInstaller.kt b/app/src/main/java/com/cybx/os/runtime/LocalRuntimeInstaller.kt
+index 93ff8d78fa2664a8b3649996ca0f3775430bf4db..c1cd0c494cdf910e96e8fee4089801753ccb14b9 100644
 --- a/app/src/main/java/com/cybx/os/runtime/LocalRuntimeInstaller.kt
 +++ b/app/src/main/java/com/cybx/os/runtime/LocalRuntimeInstaller.kt
-@@ -2,73 +2,125 @@
+@@ -2,73 +2,125 @@ package com.cybx.os.runtime
  
  import android.content.Context
  import android.net.Uri
@@ -876,11 +883,11 @@
 -                }
 +                if (isRootfsCandidate(staging)) add(staging)
 +                staging.listFiles()?.filter { it.isDirectory && isRootfsCandidate(it) }?.forEach { add(it) }
-             }
--            require(candidates.size == 1) { "Archive must contain exactly one Linux rootfs with etc/os-release" }
++            }
 +            require(candidates.size == 1) {
 +                "Archive layout is not supported: expected exactly one Kali rootfs containing etc/os-release, usr/bin/env and bash"
-+            }
+             }
+-            require(candidates.size == 1) { "Archive must contain exactly one Linux rootfs with etc/os-release" }
              val candidate = candidates.single()
 -            val hasBash = File(candidate, "bin/bash").exists() || File(candidate, "usr/bin/bash").exists()
 -            require(hasBash) { "Archive is missing bash; this is not a usable ARM64 Linux rootfs" }
@@ -921,8 +928,8 @@
              temp.delete()
 -            onProgress("CybX Linux environment installed")
 +            onProgress("Kali Linux verified and installed")
-         }
- 
++        }
++
 +    private fun isRootfsCandidate(dir: File): Boolean {
 +        if (!File(dir, "etc/os-release").isFile) return false
 +        val hasEnv = File(dir, "usr/bin/env").isFile || File(dir, "bin/env").isFile
@@ -939,19 +946,21 @@
 +                if (read < 0) break
 +                digest.update(buffer, 0, read)
 +            }
-+        }
+         }
 +        return digest.digest().joinToString("") { "%02x".format(it) }
 +    }
-+
+ 
  }
-
+diff --git a/app/src/main/java/com/cybx/os/runtime/ProotAdapter.kt b/app/src/main/java/com/cybx/os/runtime/ProotAdapter.kt
+index 3f2affdb726cae269f1e31644c788a4f8d4ca417..aacccd0e56dc499a0dc4b92ebb43622d11c7103d 100644
 --- a/app/src/main/java/com/cybx/os/runtime/ProotAdapter.kt
 +++ b/app/src/main/java/com/cybx/os/runtime/ProotAdapter.kt
-@@ -1,62 +1,59 @@
+@@ -1,62 +1,60 @@
  package com.cybx.os.runtime
  
 +import android.content.Context
 +import com.termux.terminal.TerminalSession
++import com.termux.terminal.TerminalSessionClient
  
 -/** Runs the APK-packaged Android ARM64 PRoot binary from nativeLibraryDir. */
 -class ProotAdapter(private val paths: CybxPaths) {
@@ -964,11 +973,7 @@
 +        paths.prootExecutable.canExecute() && paths.prootExecutable.length() > 0
  
 -    fun isAvailable(): Boolean = executable.isFile && executable.canExecute() && executable.length() > 0
-+    fun readinessError(): String? {
-+        if (!isAvailable()) return "Bundled ARM64 PRoot is missing. Reinstall CybX Mobile."
-+        return paths.rootfsProblem()
-+    }
- 
+-
 -    fun buildShellCommand(command: String): List<String> {
 -        require(isAvailable()) { "Bundled Android ARM64 PRoot is missing. Reinstall the CybX APK." }
 -        require(paths.rootfs.isDirectory) { "Kali rootfs is not installed." }
@@ -981,7 +986,26 @@
 -            "-b", "/proc",
 -            "-b", "/sys",
 -            "-b", "${paths.rootHome.absolutePath}:/dev/shm",
-+    fun createTerminalSession(client: CybxTerminalSessionClient): TerminalSession {
+-            "-w", "/root",
+-            "/usr/bin/env", "-i",
+-            "HOME=/root", "USER=root", "TERM=xterm-256color",
+-            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+-            "/bin/bash", "-lc", command
+-        )
++    fun readinessError(): String? {
++        if (!isAvailable()) return "Bundled ARM64 PRoot is missing. Reinstall CybX Mobile."
++        return paths.rootfsProblem()
+     }
+ 
+-    fun buildInteractiveShellCommand(): List<String> {
+-        require(isAvailable()) { "Bundled Android ARM64 PRoot is missing. Reinstall the CybX APK." }
+-        require(paths.rootfs.isDirectory) { "CybX Linux rootfs is not installed." }
+-        return listOf(
+-            executable.absolutePath,
+-            "--link2symlink",
+-            "-0", // Guest root only; this does not grant Android root.
+-            "-r", paths.rootfs.absolutePath,
++    fun createTerminalSession(client: TerminalSessionClient): TerminalSession {
 +        readinessError()?.let { error(it) }
 +        paths.prootTmp.mkdirs()
 +        paths.rootHome.mkdirs()
@@ -996,15 +1020,17 @@
 +            executable,
 +            "--link2symlink", "-0",
 +            "-r", rootfs,
-+            "-b", "/dev", "-b", "/proc", "-b", "/sys",
+             "-b", "/dev", "-b", "/proc", "-b", "/sys",
+-            "-b", "${paths.rootHome.absolutePath}:/dev/shm",
 +            "-b", "${paths.sharedMemory.absolutePath}:/dev/shm",
              "-w", "/root",
              "/usr/bin/env", "-i",
--            "HOME=/root", "USER=root", "TERM=xterm-256color",
+-            "HOME=/root", "USER=root", "LOGNAME=root",
+-            "LANG=C.UTF-8", "TERM=xterm-256color",
 +            "HOME=/root", "USER=root", "LOGNAME=root", "SHELL=/bin/bash",
 +            "LANG=C.UTF-8", "TERM=xterm-256color", "COLORTERM=truecolor",
              "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
--            "/bin/bash", "-lc", command
+-            "/bin/bash", "--noprofile", "--norc", "-i"
 +            "/bin/bash", "--login", "-i"
 +        )
 +        val env = arrayOf(
@@ -1027,25 +1053,6 @@
          )
      }
 -
--    fun buildInteractiveShellCommand(): List<String> {
--        require(isAvailable()) { "Bundled Android ARM64 PRoot is missing. Reinstall the CybX APK." }
--        require(paths.rootfs.isDirectory) { "CybX Linux rootfs is not installed." }
--        return listOf(
--            executable.absolutePath,
--            "--link2symlink",
--            "-0", // Guest root only; this does not grant Android root.
--            "-r", paths.rootfs.absolutePath,
--            "-b", "/dev", "-b", "/proc", "-b", "/sys",
--            "-b", "${paths.rootHome.absolutePath}:/dev/shm",
--            "-w", "/root",
--            "/usr/bin/env", "-i",
--            "HOME=/root", "USER=root", "LOGNAME=root",
--            "LANG=C.UTF-8", "TERM=xterm-256color",
--            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
--            "/bin/bash", "--noprofile", "--norc", "-i"
--        )
--    }
--
 -    fun processBuilder(command: List<String>): ProcessBuilder =
 -        ProcessBuilder(command).apply {
 -            directory(paths.rootfs)
@@ -1058,7 +1065,9 @@
 -
 -    fun startInteractiveShell(): Process = processBuilder(buildInteractiveShellCommand()).start()
  }
-
+diff --git a/app/src/main/res/drawable/ic_launcher_foreground.xml b/app/src/main/res/drawable/ic_launcher_foreground.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..f405202f85074cf7936fef2b197b71ccc4dd9ba1
 --- /dev/null
 +++ b/app/src/main/res/drawable/ic_launcher_foreground.xml
 @@ -0,0 +1,19 @@
@@ -1081,7 +1090,9 @@
 +    <path android:fillColor="#8CFFD0" android:pathData="M37,61 m-2,0 a2,2 0,1 0,4 0 a2,2 0,1 0,-4 0" />
 +    <path android:fillColor="#8CFFD0" android:pathData="M45,61 m-2,0 a2,2 0,1 0,4 0 a2,2 0,1 0,-4 0" />
 +</vector>
-
+diff --git a/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml b/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..a8a8fa5518fcdb2db0385028800968b2667af71e
 --- /dev/null
 +++ b/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
 @@ -0,0 +1,5 @@
@@ -1090,7 +1101,9 @@
 +    <background android:drawable="@color/ic_launcher_background" />
 +    <foreground android:drawable="@drawable/ic_launcher_foreground" />
 +</adaptive-icon>
-
+diff --git a/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml b/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..a8a8fa5518fcdb2db0385028800968b2667af71e
 --- /dev/null
 +++ b/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 @@ -0,0 +1,5 @@
@@ -1099,14 +1112,17 @@
 +    <background android:drawable="@color/ic_launcher_background" />
 +    <foreground android:drawable="@drawable/ic_launcher_foreground" />
 +</adaptive-icon>
-
+diff --git a/app/src/main/res/values/colors.xml b/app/src/main/res/values/colors.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..67e4c4318f9d8f89e237bde749d2cf6a27d3524d
 --- /dev/null
 +++ b/app/src/main/res/values/colors.xml
 @@ -0,0 +1,3 @@
 +<resources>
 +    <color name="ic_launcher_background">#050A0D</color>
 +</resources>
-
+diff --git a/settings.gradle.kts b/settings.gradle.kts
+index ce49eeb42fd6a95a92c944a16d96f1a88adac324..ab1f8d7bcb505a5ace569935d42417d83f301349 100644
 --- a/settings.gradle.kts
 +++ b/settings.gradle.kts
 @@ -1,4 +1,4 @@
@@ -1115,4 +1131,3 @@
 +dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral(); maven { url = uri("https://jitpack.io") } } }
  rootProject.name = "CybXOS"
  include(":app")
-
