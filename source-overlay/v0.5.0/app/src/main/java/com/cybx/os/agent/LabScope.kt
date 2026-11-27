@@ -79,7 +79,7 @@ object LabScope {
         val start = ip and mask
         val size = 1L shl (32 - prefix)
         val end = start + size - 1
-        return Ipv4Cidr(start, end, prefix, "$${toIp(start)}/$prefix")
+        return Ipv4Cidr(start, end, prefix, "${toIp(start)}/$prefix")
     }
 
     private fun parseIpv4(value: String): Long {
