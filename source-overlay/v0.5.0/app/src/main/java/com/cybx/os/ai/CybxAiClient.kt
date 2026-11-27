@@ -63,16 +63,6 @@ class CybxAiClient {
         }
     }
 
-    private fun isOllamaOpenAiCloud(config: AiConfig): Boolean {
-        return try {
-            val uri = URI(config.cloudUrl.trim())
-            uri.scheme.equals("https", true) &&
-                uri.host.equals("ollama.com", true) &&
-                uri.path.equals("/v1/chat/completions", true)
-        } catch (_: Exception) {
-            false
-        }
-    }
 
     private fun errorMessage(code: Int, body: String, provider: String): String {
         val jsonError = runCatching {
@@ -106,9 +96,6 @@ class CybxAiClient {
                     "Cloud AI endpoint must use HTTPS."
                 }
                 require(config.cloudApiKey.isNotBlank()) { "Cloud AI API key is not configured." }
-                require(isOllamaOpenAiCloud(config) || nativeOllama || endpoint.startsWith("https://")) {
-                    "Unsupported cloud endpoint."
-                }
             }
             val model = if (useLocalOllama) config.ollamaModel else config.cloudModel
             require(model.isNotBlank()) { "AI model name is empty." }
