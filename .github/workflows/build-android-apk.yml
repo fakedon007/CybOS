@@ -55,8 +55,8 @@ jobs:
           cp "$ROOT/app/src/main/java/com/cybx/os/runtime/CybxPRootRunner.kt" app/src/main/java/com/cybx/os/runtime/CybxPRootRunner.kt
           cp "$ROOT/app/src/main/java/com/cybx/os/runtime/ProotAdapter.kt" app/src/main/java/com/cybx/os/runtime/ProotAdapter.kt
           rm -f app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
-          grep -q 'versionCode = 14' app/build.gradle.kts
-          grep -q 'versionName = "0.6.0"' app/build.gradle.kts
+          grep -q 'versionCode = 15' app/build.gradle.kts
+          grep -q 'versionName = "0.6.1"' app/build.gradle.kts
           grep -q 'concurrent-futures:1.2.0' app/build.gradle.kts
           grep -q 'listenablefuture:1.0' app/build.gradle.kts
           ! grep -q 'terminal-view' app/build.gradle.kts
@@ -122,10 +122,10 @@ jobs:
           mkdir -p dist
           if [ "$CYBX_STABLE_SIGNING" = "true" ]; then
             gradle --no-daemon :app:assembleRelease
-            cp app/build/outputs/apk/release/app-release.apk dist/CybX-Mobile-AI-v0.6.0-release.apk
+            cp app/build/outputs/apk/release/app-release.apk dist/CybX-Mobile-AI-v0.6.1-release.apk
           else
             gradle --no-daemon :app:assembleDebug
-            cp app/build/outputs/apk/debug/app-debug.apk dist/CybX-Mobile-AI-v0.6.0-debug.apk
+            cp app/build/outputs/apk/debug/app-debug.apk dist/CybX-Mobile-AI-v0.6.1-debug.apk
           fi
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/*.apk
           sha256sum dist/*.apk > dist/SHA256SUMS.txt
@@ -133,7 +133,7 @@ jobs:
       - name: Upload APK and checksum
         uses: actions/upload-artifact@v4
         with:
-          name: CybX-Mobile-AI-v0.6.0-APK
+          name: CybX-Mobile-AI-v0.6.1-APK
           path: dist/*
           if-no-files-found: error
           retention-days: 90
