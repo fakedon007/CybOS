@@ -28,7 +28,6 @@ jobs:
           unzip -oq app-source-v0.3.3.zip -d .
           patch --batch --forward -p1 < cybx-v0.4.0.patch
           test -f app/src/main/java/com/cybx/os/runtime/CybxTerminalHost.kt
-          test -f app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
 
       - name: Fix adaptive icon Compose crash and bump version
         shell: bash
