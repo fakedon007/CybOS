@@ -15,7 +15,7 @@ data class SafeScanPlan(
 private data class Ipv4Cidr(val start: Long, val end: Long, val prefix: Int, val text: String)
 
 object LabScope {
-    private val ipPattern = Regex("""(?<![0-9.])((?:[0-9]{1,3}\\.){3}[0-9]{1,3}(?:/[0-9]{1,2})?)(?![0-9.])""")
+    private val ipPattern = Regex("""(?<![0-9.])((?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:/[0-9]{1,2})?)(?![0-9.])""")
     private val allowedWords = listOf(
         "scan", "port", "network", "check", "discover", "host",
         "স্ক্যান", "নেটওয়ার্ক", "নেটওয়ার্ক", "চেক", "পোর্ট", "খুঁজে"
