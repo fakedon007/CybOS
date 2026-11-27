@@ -41,6 +41,16 @@ data class CybxModelTurn(
 
 class CybxAiClient {
 
+    fun toolResultMessage(callId: String, toolName: String, result: String, config: AiConfig): JSONObject {
+        val message = JSONObject().put("role", "tool").put("content", result)
+        if (config.provider == "ollama") {
+            message.put("tool_name", toolName)
+        } else {
+            message.put("tool_call_id", callId)
+        }
+        return message
+    }
+
     /**
      * Makes one tool-aware assistant turn using Ollama /api/chat or an OpenAI-compatible
      * chat-completions endpoint. The app executes returned tools locally after policy checks.
@@ -68,9 +78,8 @@ class CybxAiClient {
             if (useOllama) {
                 body.put("options", JSONObject().put("temperature", 0.15))
             } else {
-                body.put("tool_choice", "auto")
-                    .put("parallel_tool_calls", false)
-                    .put("temperature", 0.15)
+                // Ollama Cloud supports tools on /v1/chat/completions but not tool_choice.
+                body.put("temperature", 0.15)
             }
 
             val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
