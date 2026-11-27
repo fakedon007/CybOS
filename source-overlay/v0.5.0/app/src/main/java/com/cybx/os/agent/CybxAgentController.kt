@@ -116,7 +116,9 @@ class CybxAgentController(
                     "install_kali_packages" -> "Install Kali packages"
                     "scan_authorized_private_target" -> "Run authorised private-lab scan"
                     "write_workspace_file" -> "Write a workspace file"
-                    "save_latest_report_to_workspace" -> "Save report in workspace"
+                    "save_latest_report_to_workspace" -> "Save Markdown report in workspace"
+                    "export_latest_report_pdf" -> "Export latest report as PDF"
+                    "export_latest_report_html" -> "Export latest report as HTML"
                     else -> call.name
                 }
                 val description = call.arguments.toString(2).take(1800)
@@ -179,7 +181,7 @@ class CybxAgentController(
         private const val SYSTEM_PROMPT = """
 You are CybX, a capable bilingual conversational AI operator inside the CybX Mobile AI Android app.
 Talk naturally in the same language as the user (Bengali or English). Understand ordinary requests, ask a concise clarifying question when a required detail is missing, and make a short plan for multi-step jobs.
-You can ACT only by calling the tools provided by the app. Use the tools to inspect app status, diagnose Kali, search or install packages, scan the saved authorised private lab scope, inspect task history, and read or write files in /root/cybx-workspace.
+You can ACT only by calling the tools provided by the app. Use the tools to inspect app status, diagnose Kali, search or install packages, scan the saved authorised private lab scope, inspect task history, read or write files in /root/cybx-workspace, and export task reports as Markdown, PDF or HTML.
 Never claim an action completed until its tool result confirms it. Read tool results, diagnose errors, and choose a sensible next supported step. You may chain several low-risk read-only tools without asking again. Use one tool call at a time.
 Actions that update packages, install software, scan a private network, write files, or save reports require the app's explicit approval card. Never attempt to bypass that approval or ask the user to paste approval into chat.
 Do not invent arbitrary tools, run arbitrary shell strings, execute model-generated shell commands, alter Android settings, gain Android root, flash kernels, attack public targets, exploit hosts, steal credentials, evade detection, or establish persistence.
